@@ -11,6 +11,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     gettext \
     git \
     lhasa \
+    jlha-utils \
     libgmpxx4ldbl \
     libgmp-dev \
     libmpfr6 \
@@ -33,23 +34,15 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     cd / && \
     rm -rf /root/amiga-gcc && \
     apt-get purge -y \
-    autoconf \
-    bison \
-    flex \
-    g++ \
-    gcc \
-    gettext \
-    git \
-    lhasa \
     libgmp-dev \
     libmpfr-dev \
     libmpc-dev \
     libncurses-dev \
-    make \
     rsync \
     texinfo\
     wget \
-    && apt-get -y autoremove
+    && apt-get -y autoremove \
+    && cd /usr/bin && mv lha lha.lhasa && ln -s jlha lha
 
 ENV PATH /opt/amiga/bin:$PATH
 
