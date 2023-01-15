@@ -45,7 +45,6 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     libmpfr-dev \
     libmpc-dev \
     libncurses-dev \
-    make \
     rsync \
     texinfo\
     wget \
