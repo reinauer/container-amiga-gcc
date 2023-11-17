@@ -2,7 +2,9 @@
 
 `Containerfile` for [Stefan "Bebbo" Franke](https://github.com/bebbo)'s [amiga-gcc](https://github.com/bebbo/amiga-gcc) toolchain for Linux/AmigaOS cross-development.
 
-A ready-to-use image built from this Containerfile is available on [Docker Hub](https://hub.docker.com/r/sebastianbergmann/amiga-gcc/).
+This container is based on work by Sebastian Bergmann: [Docker Hub](https://hub.docker.com/r/sebastianbergmann/amiga-gcc/).
+
+A ready-to-use image built from this Containerfile is available on [Docker Hub](https://hub.docker.com/r/stefanreinauer/amiga-gcc/).
 
 More information can be found [here](https://amiga.sebastian-bergmann.de/presentations/2017/evoke/amiga-software-development-in-2017).
 
@@ -53,7 +55,7 @@ int main()
 ### Compilation
 
 ```
-$ podman run -v $HOME:/host -it sebastianbergmann/amiga-gcc \
+$ podman run -v $HOME:/host -it stefanreinauer/amiga-gcc \
   m68k-amigaos-gcc /host/hello.c -o /host/hello -noixemul
 ```
 
