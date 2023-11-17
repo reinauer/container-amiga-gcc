@@ -8,7 +8,7 @@
             <arg value="--no-cache"/>
             <arg value="--squash"/>
             <arg value="--tag"/>
-            <arg value="sebastianbergmann/amiga-gcc"/>
+            <arg value="stefanreinauer/amiga-gcc"/>
             <arg path="${basedir}/Containerfile"/>
         </exec>
     </target>
@@ -22,7 +22,7 @@
             <arg value="--rm"/>
             <arg value="--volume"/>
             <arg value="${test-directory}:/host:Z"/>
-            <arg value="sebastianbergmann/amiga-gcc:latest"/>
+            <arg value="stefanreinauer/amiga-gcc:latest"/>
             <arg value="m68k-amigaos-gcc"/>
             <arg value="/host/hello.c"/>
             <arg value="-o"/>
@@ -35,7 +35,7 @@
             <arg value="--rm"/>
             <arg value="--volume"/>
             <arg value="${test-directory}:/host:Z"/>
-            <arg value="sebastianbergmann/amitools:latest"/>
+            <arg value="stefanreinauer/amiga-gcc:latest"/>
             <arg value="vamos"/>
             <arg value="/host/hello"/>
         </exec>
