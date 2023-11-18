@@ -76,7 +76,7 @@ $ docker-execute-amiga helloworld
 #### Container-ized Emulation using Virtual AmigaOS (vamos)
 
 ```
-$ podman run -v $HOME:/host sebastianbergmann/amitools:latest \
+$ podman run -v $HOME:/host stefanreinauer/amiga-gcc \
   vamos -C 68020 /host/hello
 Hello world!
 ```
