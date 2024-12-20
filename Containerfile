@@ -8,7 +8,7 @@ RUN apt-get -y update && \
       apt-utils curl git jlha-utils lhasa python3 python3-pip srecord wget \
       autoconf bison flex g++ gcc gettext git libgmpxx4ldbl libgmp-dev \
       libmpfr6 libmpfr-dev libmpc3 libmpc-dev libncurses-dev make rsync \
-      texinfo
+      texinfo zip
 
 # Make jlha the default
 RUN cd /usr/bin && mv lha lha.lhasa && ln -s jlha lha
