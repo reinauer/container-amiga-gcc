@@ -27,10 +27,10 @@ RUN git config --global pull.rebase false && \
     mkdir -p /opt/amiga && \
     make branch branch=amiga13.3 mod=gcc && \
     make update && \
-    make -j4 all NDK=3.2 && \
+    sed -i -r 's#-DHAVE_AOS4##g' projects/vbcc/Makefile && \
+    make -j4 all vlink vbcc NDK=3.2 && \
     cd / && \
     rm -rf /root/amiga-gcc
-    # make -j4 all vlink vbcc && \
 
 # Install a working VBCC
 RUN mkdir -p /tmp/vbcc-targets && \
@@ -40,6 +40,10 @@ RUN mkdir -p /tmp/vbcc-targets && \
     cd - && \
     mv /tmp/vbcc-targets/vbcc_target_m68k-amigaos/targets /opt/amiga/m68k-amigaos/vbcc/ && \
     rm -rf /tmp/vbcc-targets
+
+# Install mbtaylor1982's gencrc
+RUN wget -P /bin https://github.com/mbtaylor1982/gencrc/releases/latest/download/gencrc && \
+    chmod +x /bin/gencrc
 
 # Clean up
 RUN rm -rf /var/lib/apt/lists/* && \
