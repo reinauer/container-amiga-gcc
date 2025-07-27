@@ -1,12 +1,12 @@
-FROM ubuntu:23.10
+FROM ubuntu:25.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install all packages
 RUN apt-get -y update && \
     apt-get -y install \
-      apt-utils curl git jlha-utils lhasa python3 python3-pip srecord wget \
-      autoconf bison flex g++ gcc gettext git libgmpxx4ldbl libgmp-dev \
+      apt-utils curl file  git jlha-utils lhasa python3 python3-pip srecord \
+      wget autoconf bison flex g++ gcc gettext git libgmpxx4ldbl libgmp-dev \
       libmpfr6 libmpfr-dev libmpc3 libmpc-dev libncurses-dev make rsync \
       texinfo zip
 
@@ -21,13 +21,16 @@ RUN apt-get -y autoremove && \
 # Install Bebbo's amiga-gcc
 RUN git config --global pull.rebase false && \
     cd /root && \
-    git clone --depth 1 https://github.com/bebbo/amiga-gcc.git && \
+    git clone --depth 1 https://github.com/AmigaPorts/m68k-amigaos-gcc amiga-gcc && \
     cd /root/amiga-gcc && \
+    sed -i -r 's#\S+/gcc#https://github.com/liv2/gcc#g' default-repos && \
     mkdir -p /opt/amiga && \
+    make branch branch=amiga13.3 mod=gcc && \
     make update && \
-    make -j4 all && \
+    make -j4 all NDK=3.2 && \
     cd / && \
     rm -rf /root/amiga-gcc
+    # make -j4 all vlink vbcc && \
 
 # Install a working VBCC
 RUN mkdir -p /tmp/vbcc-targets && \
@@ -41,7 +44,7 @@ RUN mkdir -p /tmp/vbcc-targets && \
 # Clean up
 RUN rm -rf /var/lib/apt/lists/* && \
     apt-get purge -y \
-      libgmp-dev libmpfr-dev libmpc-dev libncurses-dev rsync texinfo && \
+      libgmp-dev libmpfr-dev libmpc-dev rsync texinfo && \
     apt-get -y autoremove
 
 ENV PATH /opt/amiga/bin:$PATH
