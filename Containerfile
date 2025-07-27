@@ -18,6 +18,8 @@ RUN apt-get -y autoremove && \
     rm -rf /usr/lib/python3.*/EXTERNALLY-MANAGED && \
     pip3 install -U git+https://github.com/cnvogelg/amitools.git
 
+COPY vbcc.diff /root
+
 # Install Bebbo's amiga-gcc
 RUN git config --global pull.rebase false && \
     cd /root && \
@@ -27,7 +29,7 @@ RUN git config --global pull.rebase false && \
     mkdir -p /opt/amiga && \
     make branch branch=amiga13.3 mod=gcc && \
     make update && \
-    sed -i -r 's#-DHAVE_AOS4##g' projects/vbcc/Makefile && \
+    patch -p1 < ../vbcc.diff && \
     make -j4 all vlink vbcc NDK=3.2 && \
     cd / && \
     rm -rf /root/amiga-gcc

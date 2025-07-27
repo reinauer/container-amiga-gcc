@@ -1,0 +1,24 @@
+diff --git a/projects/vbcc/Makefile b/projects/vbcc/Makefile
+index 28dca08..753820c 100644
+--- a/projects/vbcc/Makefile
++++ b/projects/vbcc/Makefile
+@@ -1,6 +1,6 @@
+ 
+ # used to create vbcc, vc and ucpp
+-CC = gcc -std=c9x -g -DHAVE_AOS4 #-fsanitize=address #-DHAVE_ECPP -DHAVE_MISRA 
++CC = gcc -std=c9x -D_POSIX_C_SOURCE=200809L -g #-fsanitize=address #-DHAVE_ECPP -DHAVE_MISRA
+ LDFLAGS = -lm
+ 
+ # native version; used to create dtgen
+diff --git a/projects/vbcc/frontend/vc.c b/projects/vbcc/frontend/vc.c
+index 99dfc2b..059e445 100644
+--- a/projects/vbcc/frontend/vc.c
++++ b/projects/vbcc/frontend/vc.c
+@@ -6,6 +6,7 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include <stdio.h>
++#include <unistd.h>
+ 
+ #ifdef __CYGWIN__
+ #include <windows.h>
