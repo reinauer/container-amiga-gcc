@@ -53,5 +53,5 @@ RUN rm -rf /var/lib/apt/lists/* && \
       libgmp-dev libmpfr-dev libmpc-dev rsync texinfo && \
     apt-get -y autoremove
 
-ENV PATH /opt/amiga/bin:$PATH
+ENV PATH=/opt/amiga/bin:$PATH
 
