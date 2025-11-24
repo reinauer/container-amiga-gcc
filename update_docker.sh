@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # ---
-# This script builds and pushes Docker images with interactive confirmation steps.
+# This script builds and pushes Docker images for multiple GCC versions
+# with interactive confirmation steps.
 # A function `ask_and_run` is defined to prompt the user before executing a command.
 # ---
 
@@ -9,6 +10,13 @@
 # Change these variables to match your Docker Hub username and image name.
 DOCKER_USER="stefanreinauer"
 IMAGE_NAME="amiga-gcc"
+
+# Define GCC versions and their corresponding branches
+declare -A GCC_VERSIONS=(
+    ["6.5.0b"]="amiga6"
+    ["13.3"]="amiga13.3"
+    ["15.2"]="amiga15.2"
+)
 
 
 # Function to prompt the user and execute a command based on their input.
@@ -50,20 +58,55 @@ ask_and_run() {
 
 # Get the current date in YYYYMMDD format.
 DATE=$(date +%Y%m%d)
+# Run sth like 'echo "-4" > .extra' if you would like to add an extra field to the version.
+EXTRA=$(cat .extra 2>/dev/null)
 
-# --- Define all the commands to be executed ---
-CMD_BUILD="docker build -t ${IMAGE_NAME}:v${DATE} ."
-CMD_TAG_LATEST="docker tag ${IMAGE_NAME}:v${DATE} ${DOCKER_USER}/${IMAGE_NAME}:latest"
-CMD_TAG_VERSIONED="docker tag ${IMAGE_NAME}:v${DATE} ${DOCKER_USER}/${IMAGE_NAME}:v${DATE}"
+# --- Build and push each GCC version ---
+for GCC_VERSION in "${!GCC_VERSIONS[@]}"; do
+    GCC_BRANCH="${GCC_VERSIONS[$GCC_VERSION]}"
+
+    echo "========================================"
+    echo "Building GCC ${GCC_VERSION} (branch: ${GCC_BRANCH})"
+    echo "========================================"
+    echo
+
+    # Define tags for this version
+    LOCAL_TAG="${IMAGE_NAME}:gcc-v${GCC_VERSION}-${DATE}${EXTRA}"
+    TAG_GCC_VERSION="${DOCKER_USER}/${IMAGE_NAME}:gcc-v${GCC_VERSION}"
+    TAG_GCC_VERSION_DATE="${DOCKER_USER}/${IMAGE_NAME}:gcc-v${GCC_VERSION}-${DATE}${EXTRA}"
+
+    # Build with build arguments
+    CMD_BUILD="docker build --build-arg GCC_BRANCH=${GCC_BRANCH} --build-arg GCC_VERSION=${GCC_VERSION} -t ${LOCAL_TAG} ."
+    CMD_TAG_VERSION="docker tag ${LOCAL_TAG} ${TAG_GCC_VERSION}"
+    CMD_TAG_VERSION_DATE="docker tag ${LOCAL_TAG} ${TAG_GCC_VERSION_DATE}"
+    CMD_PUSH_VERSION="docker push ${TAG_GCC_VERSION}"
+    CMD_PUSH_VERSION_DATE="docker push ${TAG_GCC_VERSION_DATE}"
+
+    # Execute commands for this version
+    ask_and_run "${CMD_BUILD}"
+    ask_and_run "${CMD_TAG_VERSION}"
+    ask_and_run "${CMD_TAG_VERSION_DATE}"
+    ask_and_run "${CMD_PUSH_VERSION}"
+    ask_and_run "${CMD_PUSH_VERSION_DATE}"
+
+    echo
+done
+
+#LATEST="13.3"
+#LATEST="15.2"
+LATEST="6.5.0b"
+
+# Optionally tag one of the currently built GCC versions as 'latest'
+echo "========================================"
+echo "Tagging GCC ${LATEST} as 'latest'"
+echo "========================================"
+echo
+
+CMD_TAG_LATEST="docker tag ${IMAGE_NAME}:gcc-v${LATEST}-${DATE}${EXTRA} ${DOCKER_USER}/${IMAGE_NAME}:latest"
 CMD_PUSH_LATEST="docker push ${DOCKER_USER}/${IMAGE_NAME}:latest"
-CMD_PUSH_VERSIONED="docker push ${DOCKER_USER}/${IMAGE_NAME}:v${DATE}"
 
-
-# --- Execute each command with the confirmation prompt ---
-ask_and_run "${CMD_BUILD}"
 ask_and_run "${CMD_TAG_LATEST}"
-ask_and_run "${CMD_TAG_VERSIONED}"
 ask_and_run "${CMD_PUSH_LATEST}"
-ask_and_run "${CMD_PUSH_VERSIONED}"
 
+echo
 echo "Script finished."
