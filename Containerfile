@@ -1,5 +1,11 @@
 FROM ubuntu:25.10
 
+# Build arguments for configurable GCC branch
+#ARG GCC_BRANCH=amiga13.3
+#ARG GCC_VERSION=13.3
+ARG GCC_BRANCH=amiga6
+ARG GCC_VERSION=6.5.0b
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install all packages
@@ -27,7 +33,7 @@ RUN git config --global pull.rebase false && \
     cd /root/amiga-gcc && \
     sed -i -r 's#\S+/gcc#https://github.com/AmigaPorts/gcc#g' default-repos && \
     mkdir -p /opt/amiga && \
-    make branch branch=amiga13.3 mod=gcc && \
+    make branch branch=${GCC_BRANCH} mod=gcc && \
     make update && \
     patch -p1 < ../vbcc.diff && \
     make -j4 all vlink vbcc NDK=3.2 && \
@@ -54,4 +60,8 @@ RUN rm -rf /var/lib/apt/lists/* && \
     apt-get -y autoremove
 
 ENV PATH=/opt/amiga/bin:$PATH
+
+# Add labels for documentation
+LABEL gcc.version="${GCC_VERSION}"
+LABEL gcc.branch="${GCC_BRANCH}"
 
