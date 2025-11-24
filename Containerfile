@@ -25,7 +25,7 @@ RUN git config --global pull.rebase false && \
     cd /root && \
     git clone --depth 1 https://github.com/AmigaPorts/m68k-amigaos-gcc amiga-gcc && \
     cd /root/amiga-gcc && \
-    sed -i -r 's#\S+/gcc#https://github.com/liv2/gcc#g' default-repos && \
+    sed -i -r 's#\S+/gcc#https://github.com/AmigaPorts/gcc#g' default-repos && \
     mkdir -p /opt/amiga && \
     make branch branch=amiga13.3 mod=gcc && \
     make update && \
