@@ -6,6 +6,32 @@
 # A function `ask_and_run` is defined to prompt the user before executing a command.
 # ---
 
+# --- Parse command line arguments ---
+NO_SKIP=false
+for arg in "$@"; do
+    case "$arg" in
+        -n|--no-skip)
+            NO_SKIP=true
+            ;;
+        -h|--help)
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Build and push Docker images for multiple GCC versions."
+            echo ""
+            echo "Options:"
+            echo "  -n, --no-skip    Run all steps without prompting"
+            echo "  -h, --help       Show this help message"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $arg"
+            echo "Usage: $0 [OPTIONS]"
+            echo "Try '$0 --help' for more information."
+            exit 1
+            ;;
+    esac
+done
+
 # --- Configuration ---
 # Change these variables to match your Docker Hub username and image name.
 DOCKER_USER="stefanreinauer"
@@ -31,7 +57,12 @@ ask_and_run() {
     # Prompt the user with the command and ask for confirmation.
     # -p: Display the prompt on the same line without a trailing newline.
     # -r: Prevents backslash from acting as an escape character.
-    read -p "Next step: -> ${cmd} <- Skip? [yN] " -r response
+    if [ "$NO_SKIP" = true ]; then
+        echo "Next step: -> ${cmd} <-"
+        response="N"
+    else
+        read -p "Next step: -> ${cmd} <- Skip? [yN] " -r response
+    fi
 
     # Use a case statement to check the user's input.
     case "$response" in

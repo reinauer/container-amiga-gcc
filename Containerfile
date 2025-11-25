@@ -6,6 +6,9 @@ FROM ubuntu:25.10
 ARG BUILD_GCC_BRANCH=amiga6
 ARG BUILD_GCC_VERSION=6.5.0b
 
+# NDK version - defaults to 3.9 for GCC 15.2, 3.2 for others
+ARG NDK_VERSION
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install all packages
@@ -27,35 +30,37 @@ RUN apt-get -y autoremove && \
 COPY vbcc.diff /root
 
 # Install Bebbo's amiga-gcc
-RUN git config --global pull.rebase false && \
+RUN NDK=${NDK_VERSION:-$([ "${BUILD_GCC_VERSION}" = "15.2" ] && echo "3.9" || echo "3.2")} && \
+    git config --global pull.rebase false && \
     cd /root && \
     git clone --depth 1 https://github.com/AmigaPorts/m68k-amigaos-gcc amiga-gcc && \
     cd /root/amiga-gcc && \
     sed -i -r 's#\S+/gcc#https://github.com/AmigaPorts/gcc#g' default-repos && \
     mkdir -p /opt/amiga && \
     make branch branch=${BUILD_GCC_BRANCH} mod=gcc && \
-    make update NDK=3.2 && \
-    make -j $(nproc) all NDK=3.2
+    make update NDK=${NDK} && \
+    make -j $(nproc) all NDK=${NDK}
 
 # Install all SDKs
-RUN cd /root/amiga-gcc && \
-    make -j $(nproc) sdk=filesysbox NDK=3.2 && \
-    make -j $(nproc) sdk=sdi NDK=3.2 && \
-    make -j $(nproc) sdk=ahi NDK=3.2 && \
-    make -j $(nproc) sdk=mhi NDK=3.2 && \
-    make -j $(nproc) sdk=camd NDK=3.2 && \
-    make -j $(nproc) sdk=cgx NDK=3.2 && \
-    make -j $(nproc) sdk=guigfx NDK=3.2 && \
-    make -j $(nproc) sdk=mui NDK=3.2 && \
-    make -j $(nproc) sdk=p96 NDK=3.2 && \
-    make -j $(nproc) sdk=mcc_betterstring NDK=3.2 && \
-    make -j $(nproc) sdk=mcc_guigfx NDK=3.2 && \
-    make -j $(nproc) sdk=mcc_nlist NDK=3.2 && \
-    make -j $(nproc) sdk=mcc_texteditor NDK=3.2 && \
-    make -j $(nproc) sdk=mcc_thebar NDK=3.2 && \
-    make -j $(nproc) sdk=render NDK=3.2 && \
-    make -j $(nproc) sdk=warp3d NDK=3.2 && \
-    make -j $(nproc) all-sdk NDK=3.2
+RUN NDK=${NDK_VERSION:-$([ "${BUILD_GCC_VERSION}" = "15.2" ] && echo "3.9" || echo "3.2")} && \
+    cd /root/amiga-gcc && \
+    make -j $(nproc) sdk=filesysbox NDK=${NDK} && \
+    make -j $(nproc) sdk=sdi NDK=${NDK} && \
+    make -j $(nproc) sdk=ahi NDK=${NDK} && \
+    make -j $(nproc) sdk=mhi NDK=${NDK} && \
+    make -j $(nproc) sdk=camd NDK=${NDK} && \
+    make -j $(nproc) sdk=cgx NDK=${NDK} && \
+    make -j $(nproc) sdk=guigfx NDK=${NDK} && \
+    make -j $(nproc) sdk=mui NDK=${NDK} && \
+    make -j $(nproc) sdk=p96 NDK=${NDK} && \
+    make -j $(nproc) sdk=mcc_betterstring NDK=${NDK} && \
+    make -j $(nproc) sdk=mcc_guigfx NDK=${NDK} && \
+    make -j $(nproc) sdk=mcc_nlist NDK=${NDK} && \
+    make -j $(nproc) sdk=mcc_texteditor NDK=${NDK} && \
+    make -j $(nproc) sdk=mcc_thebar NDK=${NDK} && \
+    make -j $(nproc) sdk=render NDK=${NDK} && \
+    make -j $(nproc) sdk=warp3d NDK=${NDK} && \
+    make -j $(nproc) all-sdk NDK=${NDK}
 
 # Download and fix additional include files
 RUN cd /root/amiga-gcc && \
@@ -67,9 +72,10 @@ RUN cd /root/amiga-gcc && \
     mv -fv newstyle.h sana2.h sana2specialstats.h /opt/amiga/m68k-amigaos/ndk-include/devices/
 
 # Build vlink and vbcc
-RUN cd /root/amiga-gcc && \
+RUN NDK=${NDK_VERSION:-$([ "${BUILD_GCC_VERSION}" = "15.2" ] && echo "3.9" || echo "3.2")} && \
+    cd /root/amiga-gcc && \
     patch -p1 < ../vbcc.diff && \
-    make -j $(nproc) vlink vbcc NDK=3.2
+    make -j $(nproc) vlink vbcc NDK=${NDK}
 
 # Install a working VBCC
 RUN mkdir -p /tmp/vbcc-targets && \
