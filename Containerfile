@@ -1,10 +1,10 @@
 FROM ubuntu:25.10
 
 # Build arguments for configurable GCC branch
-#ARG GCC_BRANCH=amiga13.3
-#ARG GCC_VERSION=13.3
-ARG GCC_BRANCH=amiga6
-ARG GCC_VERSION=6.5.0b
+#ARG BUILD_GCC_BRANCH=amiga13.3
+#ARG BUILD_GCC_VERSION=13.3
+ARG BUILD_GCC_BRANCH=amiga6
+ARG BUILD_GCC_VERSION=6.5.0b
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -33,7 +33,7 @@ RUN git config --global pull.rebase false && \
     cd /root/amiga-gcc && \
     sed -i -r 's#\S+/gcc#https://github.com/AmigaPorts/gcc#g' default-repos && \
     mkdir -p /opt/amiga && \
-    make branch branch=${GCC_BRANCH} mod=gcc && \
+    make branch branch=${BUILD_GCC_BRANCH} mod=gcc && \
     make update NDK=3.2 && \
     make -j $(nproc) all NDK=3.2
 
@@ -95,6 +95,6 @@ RUN cd / && \
 ENV PATH=/opt/amiga/bin:$PATH
 
 # Add labels for documentation
-LABEL gcc.version="${GCC_VERSION}"
-LABEL gcc.branch="${GCC_BRANCH}"
+LABEL gcc.version="${BUILD_GCC_VERSION}"
+LABEL gcc.branch="${BUILD_GCC_BRANCH}"
 

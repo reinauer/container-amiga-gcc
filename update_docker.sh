@@ -76,7 +76,7 @@ for GCC_VERSION in "${!GCC_VERSIONS[@]}"; do
     TAG_GCC_VERSION_DATE="${DOCKER_USER}/${IMAGE_NAME}:gcc-v${GCC_VERSION}-${DATE}${EXTRA}"
 
     # Build with build arguments
-    CMD_BUILD="docker build --build-arg GCC_BRANCH=${GCC_BRANCH} --build-arg GCC_VERSION=${GCC_VERSION} -t ${LOCAL_TAG} ."
+    CMD_BUILD="docker build --build-arg BUILD_GCC_BRANCH=${GCC_BRANCH} --build-arg BUILD_GCC_VERSION=${GCC_VERSION} -t ${LOCAL_TAG} ."
     CMD_TAG_VERSION="docker tag ${LOCAL_TAG} ${TAG_GCC_VERSION}"
     CMD_TAG_VERSION_DATE="docker tag ${LOCAL_TAG} ${TAG_GCC_VERSION_DATE}"
     CMD_PUSH_VERSION="docker push ${TAG_GCC_VERSION}"
