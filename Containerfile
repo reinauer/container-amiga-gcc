@@ -14,13 +14,21 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install all packages
 RUN apt-get -y update && \
     apt-get -y install \
-      apt-utils curl file  git jlha-utils lhasa python3 python3-pip srecord \
-      wget autoconf bison flex g++ gcc gettext git libgmpxx4ldbl libgmp-dev \
+      apt-utils curl file git python3 python3-pip srecord \
+      wget autoconf automake bison flex g++ gcc gettext git libgmpxx4ldbl libgmp-dev \
       libmpfr6 libmpfr-dev libmpc3 libmpc-dev libncurses-dev make rsync \
       texinfo zip
 
-# Make jlha the default
-RUN cd /usr/bin && mv lha lha.lhasa && ln -s jlha lha
+# Build and install lha from source
+RUN cd /tmp && \
+    git clone --depth 1 https://github.com/jca02266/lha.git && \
+    cd lha && \
+    autoreconf -vfi && \
+    ./configure --prefix=/usr && \
+    make -j $(nproc) && \
+    make install && \
+    cd / && \
+    rm -rf /tmp/lha
 
 # Install amitools.
 RUN apt-get -y autoremove && \
