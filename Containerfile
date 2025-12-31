@@ -44,31 +44,31 @@ RUN NDK=${NDK_VERSION:-$([ "${BUILD_GCC_VERSION}" = "15.2" ] && echo "3.9" || ec
     git clone --depth 1 https://github.com/AmigaPorts/m68k-amigaos-gcc amiga-gcc && \
     cd /root/amiga-gcc && \
     sed -i -r 's#\S+/gcc#https://github.com/AmigaPorts/gcc#g' default-repos && \
-    mkdir -p /opt/amiga && \
+    mkdir -p /opt/amiga-${BUILD_GCC_VERSION} && \
     make branch branch=${BUILD_GCC_BRANCH} mod=gcc && \
     make update NDK=${NDK} && \
-    make -j $(nproc) all NDK=${NDK}
+    make -j $(nproc) all NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION}
 
 # Install all SDKs
 RUN NDK=${NDK_VERSION:-$([ "${BUILD_GCC_VERSION}" = "15.2" ] && echo "3.9" || echo "3.2")} && \
     cd /root/amiga-gcc && \
-    make -j $(nproc) sdk=filesysbox NDK=${NDK} && \
-    make -j $(nproc) sdk=sdi NDK=${NDK} && \
-    make -j $(nproc) sdk=ahi NDK=${NDK} && \
-    make -j $(nproc) sdk=mhi NDK=${NDK} && \
-    make -j $(nproc) sdk=camd NDK=${NDK} && \
-    make -j $(nproc) sdk=cgx NDK=${NDK} && \
-    make -j $(nproc) sdk=guigfx NDK=${NDK} && \
-    make -j $(nproc) sdk=mui NDK=${NDK} && \
-    make -j $(nproc) sdk=p96 NDK=${NDK} && \
-    make -j $(nproc) sdk=mcc_betterstring NDK=${NDK} && \
-    make -j $(nproc) sdk=mcc_guigfx NDK=${NDK} && \
-    make -j $(nproc) sdk=mcc_nlist NDK=${NDK} && \
-    make -j $(nproc) sdk=mcc_texteditor NDK=${NDK} && \
-    make -j $(nproc) sdk=mcc_thebar NDK=${NDK} && \
-    make -j $(nproc) sdk=render NDK=${NDK} && \
-    make -j $(nproc) sdk=warp3d NDK=${NDK} && \
-    make -j $(nproc) all-sdk NDK=${NDK}
+    make -j $(nproc) sdk=filesysbox NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
+    make -j $(nproc) sdk=sdi NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
+    make -j $(nproc) sdk=ahi NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
+    make -j $(nproc) sdk=mhi NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
+    make -j $(nproc) sdk=camd NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
+    make -j $(nproc) sdk=cgx NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
+    make -j $(nproc) sdk=guigfx NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
+    make -j $(nproc) sdk=mui NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
+    make -j $(nproc) sdk=p96 NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
+    make -j $(nproc) sdk=mcc_betterstring NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
+    make -j $(nproc) sdk=mcc_guigfx NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
+    make -j $(nproc) sdk=mcc_nlist NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
+    make -j $(nproc) sdk=mcc_texteditor NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
+    make -j $(nproc) sdk=mcc_thebar NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
+    make -j $(nproc) sdk=render NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
+    make -j $(nproc) sdk=warp3d NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
+    make -j $(nproc) all-sdk NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION}
 
 # Download and fix additional include files
 RUN cd /root/amiga-gcc && \
@@ -77,13 +77,13 @@ RUN cd /root/amiga-gcc && \
     curl -o sana2specialstats.h https://raw.githubusercontent.com/aros-development-team/AROS/master/compiler/include/devices/sana2specialstats.h && \
     curl -o newstyle.diff https://dl.amigadev.com/newstyle.diff && \
     patch --ignore-whitespace < newstyle.diff && \
-    mv -fv newstyle.h sana2.h sana2specialstats.h /opt/amiga/m68k-amigaos/ndk-include/devices/
+    mv -fv newstyle.h sana2.h sana2specialstats.h /opt/amiga-${BUILD_GCC_VERSION}/m68k-amigaos/ndk-include/devices/
 
 # Build vlink and vbcc
 RUN NDK=${NDK_VERSION:-$([ "${BUILD_GCC_VERSION}" = "15.2" ] && echo "3.9" || echo "3.2")} && \
     cd /root/amiga-gcc && \
     patch -p1 < ../vbcc.diff && \
-    make -j $(nproc) vlink vbcc NDK=${NDK}
+    make -j $(nproc) vlink vbcc NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION}
 
 # Install a working VBCC
 RUN mkdir -p /tmp/vbcc-targets && \
@@ -91,7 +91,7 @@ RUN mkdir -p /tmp/vbcc-targets && \
     cd /tmp/vbcc-targets && \
     lha -x vbcc_target_m68k-amigaos.lha && \
     cd - && \
-    mv /tmp/vbcc-targets/vbcc_target_m68k-amigaos/targets /opt/amiga/m68k-amigaos/vbcc/ && \
+    mv /tmp/vbcc-targets/vbcc_target_m68k-amigaos/targets /opt/amiga-${BUILD_GCC_VERSION}/m68k-amigaos/vbcc/ && \
     rm -rf /tmp/vbcc-targets
 
 # Install mbtaylor1982's gencrc
@@ -105,6 +105,9 @@ RUN cd / && \
     apt-get purge -y \
       libgmp-dev libmpfr-dev libmpc-dev rsync texinfo && \
     apt-get -y autoremove
+
+# Create symlink from /opt/amiga to versioned directory
+RUN ln -s /opt/amiga-${BUILD_GCC_VERSION} /opt/amiga
 
 ENV PATH=/opt/amiga/bin:$PATH
 
