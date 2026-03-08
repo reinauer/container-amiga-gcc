@@ -94,6 +94,13 @@ RUN mkdir -p /tmp/vbcc-targets && \
     mv /tmp/vbcc-targets/vbcc_target_m68k-amigaos/targets /opt/amiga-${BUILD_GCC_VERSION}/m68k-amigaos/vbcc/ && \
     rm -rf /tmp/vbcc-targets
 
+# Install vbcc config files with versioned paths
+COPY aos68k aos68km aos68kr /opt/amiga-${BUILD_GCC_VERSION}/bin/
+RUN sed -i "s|/opt/amiga/|/opt/amiga-${BUILD_GCC_VERSION}/|g" \
+    /opt/amiga-${BUILD_GCC_VERSION}/bin/aos68k \
+    /opt/amiga-${BUILD_GCC_VERSION}/bin/aos68km \
+    /opt/amiga-${BUILD_GCC_VERSION}/bin/aos68kr
+
 # Install mbtaylor1982's gencrc
 RUN wget -P /bin https://github.com/mbtaylor1982/gencrc/releases/latest/download/gencrc && \
     chmod +x /bin/gencrc
