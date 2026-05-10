@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_URL="https://github.com/AmigaPorts/m68k-amigaos-gcc"
 GCC_REPO_URL="https://github.com/AmigaPorts/gcc"
 NDK_VERSION="3.2"
+NDK_VERSION_EXPLICIT=0
 PREFIX_ROOT="/opt"
 WORKDIR="${SCRIPT_DIR}/.mac-build"
 JOBS=""
@@ -68,11 +69,12 @@ steps as Containerfile.
 Defaults:
   versions:       13.3, 6.5.0b
   prefixes:       /opt/amiga-13.3, /opt/amiga-6.5.0b
-  NDK:            3.2
+  NDK:            3.2, except 15.2 defaults to 3.9
   source workdir: ./.mac-build
 
 Options:
-  --ndk VERSION              NDK version passed to make (default: 3.2)
+  --ndk VERSION              NDK version passed to make (default: 3.2;
+                             15.2 defaults to 3.9 unless overridden)
   --version VERSION[:BRANCH] Build one version; repeat for multiple versions
                              Known versions: 13.3 -> amiga13.3,
                              6.5.0b -> amiga6, 15.2 -> amiga15.2
@@ -142,6 +144,7 @@ parse_args() {
       --ndk)
         [[ $# -ge 2 ]] || die "--ndk requires a value"
         NDK_VERSION="$2"
+        NDK_VERSION_EXPLICIT=1
         shift 2
         ;;
       --version)
@@ -213,6 +216,15 @@ parse_args() {
 
 version_from_spec() {
   printf '%s\n' "${1%%:*}"
+}
+
+ndk_for_version() {
+  local version="$1"
+  if [[ "$NDK_VERSION_EXPLICIT" -eq 0 && "$version" == "15.2" ]]; then
+    printf '%s\n' "3.9"
+  else
+    printf '%s\n' "$NDK_VERSION"
+  fi
 }
 
 branch_from_spec() {
@@ -498,6 +510,17 @@ patch_macos_gcc_sources() {
   fi
 }
 
+patch_gcc15_libnix_sources() {
+  local src="$1"
+  local cmpxf2="${src}/projects/libnix/sources/math/math/__cmpxf2.c"
+
+  if [[ -f "$cmpxf2" ]] && ! grep -q 'CODEX_GCC15_LIBNIX_TRUNCXFDF2' "$cmpxf2"; then
+    log "Patching libnix __truncxfdf2 duplicate for GCC 15 libgcc"
+    perl -0pi -e 's~(/\* convert long double to double \*/\ndouble\n__truncxfdf2)~#if !defined(__GNUC__) || __GNUC__ < 15\n#define CODEX_GCC15_LIBNIX_TRUNCXFDF2 1\n$1~' "$cmpxf2"
+    perl -0pi -e 's~(\nextern int __cmpdf2 \(double x1, double x2\);)~\n#endif /* !defined(__GNUC__) || __GNUC__ < 15 */\n$1~' "$cmpxf2"
+  fi
+}
+
 make_amiga() {
   local src="$1"
   shift
@@ -520,34 +543,36 @@ make_amiga_parallel() {
 
 build_gcc_version() {
   local spec="$1"
-  local version branch prefix src sdk
+  local version branch prefix src sdk ndk
 
   version="$(version_from_spec "$spec")"
   branch="$(branch_from_spec "$spec")"
   [[ -n "$version" ]] || die "empty version in ${spec}"
   [[ -n "$branch" ]] || die "empty branch in ${spec}"
+  ndk="$(ndk_for_version "$version")"
 
   prefix="${PREFIX_ROOT}/amiga-${version}"
   src="${WORKDIR}/amiga-gcc-${version}"
 
-  log "Building GCC ${version} (${branch}) with NDK ${NDK_VERSION}"
+  log "Building GCC ${version} (${branch}) with NDK ${ndk}"
   ensure_prefix_writable "$prefix"
   prepare_source "$version" "$src"
 
   log "Building and installing GCC ${version} into ${prefix}"
   make_amiga "$src" branch branch="$branch" mod=gcc
-  make_amiga "$src" update NDK="$NDK_VERSION"
+  make_amiga "$src" update NDK="$ndk"
   patch_macos_gcc_sources "$src"
-  make_amiga_parallel "$src" all NDK="$NDK_VERSION" PREFIX="$prefix"
+  patch_gcc15_libnix_sources "$src"
+  make_amiga_parallel "$src" all NDK="$ndk" PREFIX="$prefix"
 
   log "Installing SDKs for GCC ${version}"
   for sdk in "${SDKS[@]}"; do
-    make_amiga_parallel "$src" "sdk=${sdk}" NDK="$NDK_VERSION" PREFIX="$prefix"
+    make_amiga_parallel "$src" "sdk=${sdk}" NDK="$ndk" PREFIX="$prefix"
   done
-  make_amiga_parallel "$src" all-sdk NDK="$NDK_VERSION" PREFIX="$prefix"
+  make_amiga_parallel "$src" all-sdk NDK="$ndk" PREFIX="$prefix"
 
   download_and_fix_includes "$src" "$prefix"
-  build_vlink_and_vbcc "$src" "$prefix"
+  build_vlink_and_vbcc "$src" "$prefix" "$ndk"
   install_working_vbcc "$prefix"
   install_vbcc_configs "$prefix"
   verify_prefix "$prefix"
@@ -578,6 +603,7 @@ download_and_fix_includes() {
 build_vlink_and_vbcc() {
   local src="$1"
   local prefix="$2"
+  local ndk="$3"
 
   log "Building vlink and vbcc for ${prefix}"
   (
@@ -586,7 +612,7 @@ build_vlink_and_vbcc() {
       "$PATCH_BIN" -p1 < "${SCRIPT_DIR}/vbcc.diff"
     fi
   )
-  make_amiga_parallel "$src" vlink vbcc NDK="$NDK_VERSION" PREFIX="$prefix"
+  make_amiga_parallel "$src" vlink vbcc NDK="$ndk" PREFIX="$prefix"
 }
 
 install_working_vbcc() {
