@@ -1,0 +1,684 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_URL="https://github.com/AmigaPorts/m68k-amigaos-gcc"
+GCC_REPO_URL="https://github.com/AmigaPorts/gcc"
+NDK_VERSION="3.2"
+PREFIX_ROOT="/opt"
+WORKDIR="${SCRIPT_DIR}/.mac-build"
+JOBS=""
+INSTALL_BREW=1
+INSTALL_AMITOOLS=1
+REUSE_SOURCE=0
+DEFAULT_SYMLINK_VERSION=""
+HOST_CC="${CC:-}"
+HOST_CXX="${CXX:-}"
+VERSION_SPECS=()
+
+SDKS=(
+  filesysbox
+  sdi
+  ahi
+  mhi
+  camd
+  cgx
+  guigfx
+  mui
+  p96
+  mcc_betterstring
+  mcc_guigfx
+  mcc_nlist
+  mcc_texteditor
+  mcc_thebar
+  render
+  warp3d
+)
+
+BREW_PACKAGES=(
+  bash
+  wget
+  make
+  lhasa
+  gmp
+  mpfr
+  libmpc
+  flex
+  gettext
+  gnu-sed
+  texinfo
+  autoconf
+  automake
+  bison
+  rsync
+  srecord
+  gperf
+  ncurses
+  readline
+  python
+)
+
+usage() {
+  cat <<'EOF'
+Usage: ./build_mac.sh [options]
+
+Build Bebbo/AmigaPorts m68k-amigaos-gcc on macOS using the same high-level
+steps as Containerfile.
+
+Defaults:
+  versions:       13.3, 6.5.0b
+  prefixes:       /opt/amiga-13.3, /opt/amiga-6.5.0b
+  NDK:            3.2
+  source workdir: ./.mac-build
+
+Options:
+  --ndk VERSION              NDK version passed to make (default: 3.2)
+  --version VERSION[:BRANCH] Build one version; repeat for multiple versions
+                             Known versions: 13.3 -> amiga13.3,
+                             6.5.0b -> amiga6, 15.2 -> amiga15.2
+  --prefix-root DIR          Install under DIR/amiga-VERSION (default: /opt)
+  --workdir DIR              Build workspace (default: ./.mac-build)
+  --jobs N                   Parallel make jobs (default: macOS CPU count)
+  --repo URL                 Main amiga-gcc repository URL
+  --cc PATH_OR_NAME          Host C compiler (default: prefer gcc-15)
+  --cxx PATH_OR_NAME         Host C++ compiler (default: prefer g++-15)
+  --skip-brew                Do not install Homebrew formulae
+  --skip-amitools            Do not create a local amitools Python venv
+  --reuse-source             Reuse existing per-version source trees
+  --link-default VERSION     Create/update /opt/amiga -> /opt/amiga-VERSION
+  -h, --help                 Show this help
+
+Examples:
+  ./build_mac.sh
+  ./build_mac.sh --ndk 3.9 --version 13.3
+  ./build_mac.sh --cc gcc-12 --cxx g++-12
+  ./build_mac.sh --version 15.2:amiga15.2 --link-default 15.2
+EOF
+}
+
+log() {
+  printf '\n==> %s\n' "$*"
+}
+
+die() {
+  printf 'error: %s\n' "$*" >&2
+  exit 1
+}
+
+append_unique_path() {
+  local dir="$1"
+  if [[ -d "$dir" ]]; then
+    case ":${PATH}:" in
+      *":${dir}:"*) ;;
+      *) PATH="${PATH}:${dir}" ;;
+    esac
+  fi
+}
+
+prepend_unique_path() {
+  local dir="$1"
+  if [[ -d "$dir" ]]; then
+    case ":${PATH}:" in
+      *":${dir}:"*) ;;
+      *) PATH="${dir}:${PATH}" ;;
+    esac
+  fi
+}
+
+detect_jobs() {
+  if [[ -n "$JOBS" ]]; then
+    return
+  fi
+
+  JOBS="$(sysctl -n hw.ncpu 2>/dev/null || printf '4')"
+  if [[ -z "$JOBS" || "$JOBS" -lt 1 ]]; then
+    JOBS=4
+  fi
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --ndk)
+        [[ $# -ge 2 ]] || die "--ndk requires a value"
+        NDK_VERSION="$2"
+        shift 2
+        ;;
+      --version)
+        [[ $# -ge 2 ]] || die "--version requires a value"
+        VERSION_SPECS+=("$2")
+        shift 2
+        ;;
+      --prefix-root)
+        [[ $# -ge 2 ]] || die "--prefix-root requires a value"
+        PREFIX_ROOT="${2%/}"
+        shift 2
+        ;;
+      --workdir)
+        [[ $# -ge 2 ]] || die "--workdir requires a value"
+        WORKDIR="${2%/}"
+        shift 2
+        ;;
+      --jobs)
+        [[ $# -ge 2 ]] || die "--jobs requires a value"
+        JOBS="$2"
+        shift 2
+        ;;
+      --repo)
+        [[ $# -ge 2 ]] || die "--repo requires a value"
+        REPO_URL="$2"
+        shift 2
+        ;;
+      --cc)
+        [[ $# -ge 2 ]] || die "--cc requires a value"
+        HOST_CC="$2"
+        shift 2
+        ;;
+      --cxx)
+        [[ $# -ge 2 ]] || die "--cxx requires a value"
+        HOST_CXX="$2"
+        shift 2
+        ;;
+      --skip-brew)
+        INSTALL_BREW=0
+        shift
+        ;;
+      --skip-amitools)
+        INSTALL_AMITOOLS=0
+        shift
+        ;;
+      --reuse-source)
+        REUSE_SOURCE=1
+        shift
+        ;;
+      --link-default)
+        [[ $# -ge 2 ]] || die "--link-default requires a version"
+        DEFAULT_SYMLINK_VERSION="$2"
+        shift 2
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "unknown option: $1"
+        ;;
+    esac
+  done
+
+  if [[ ${#VERSION_SPECS[@]} -eq 0 ]]; then
+    VERSION_SPECS=("13.3" "6.5.0b")
+  fi
+}
+
+version_from_spec() {
+  printf '%s\n' "${1%%:*}"
+}
+
+branch_from_spec() {
+  local spec="$1"
+  local version
+
+  if [[ "$spec" == *:* ]]; then
+    printf '%s\n' "${spec#*:}"
+    return
+  fi
+
+  version="$(version_from_spec "$spec")"
+  case "$version" in
+    6.5.0b) printf '%s\n' "amiga6" ;;
+    13.3) printf '%s\n' "amiga13.3" ;;
+    15.2) printf '%s\n' "amiga15.2" ;;
+    *) die "no branch mapping for GCC version ${version}; use --version ${version}:BRANCH" ;;
+  esac
+}
+
+brew_prefix() {
+  brew --prefix "$1" 2>/dev/null || true
+}
+
+ensure_brew() {
+  command -v brew >/dev/null 2>&1 || die "Homebrew is required. Install it from https://brew.sh/ first."
+
+  if [[ "$INSTALL_BREW" -eq 0 ]]; then
+    log "Skipping Homebrew package installation"
+    return
+  fi
+
+  local missing=()
+  local package
+  for package in "${BREW_PACKAGES[@]}"; do
+    if ! brew list --formula "$package" >/dev/null 2>&1; then
+      missing+=("$package")
+    fi
+  done
+
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    log "Installing Homebrew packages: ${missing[*]}"
+    brew install "${missing[@]}"
+  else
+    log "Homebrew packages already installed"
+  fi
+
+  ensure_host_gcc_brew
+}
+
+ensure_host_gcc_brew() {
+  if [[ -n "$HOST_CC" && -n "$HOST_CXX" ]]; then
+    return
+  fi
+
+  if command -v gcc-15 >/dev/null 2>&1 && command -v g++-15 >/dev/null 2>&1; then
+    return
+  fi
+
+  if brew info --formula gcc@15 >/dev/null 2>&1; then
+    if ! brew list --formula gcc@15 >/dev/null 2>&1; then
+      log "Installing Homebrew gcc@15"
+      brew install gcc@15
+    fi
+    return
+  fi
+
+  if ! brew list --formula gcc >/dev/null 2>&1; then
+    log "gcc@15 formula not available; installing Homebrew gcc"
+    brew install gcc
+  fi
+}
+
+configure_macos_tools() {
+  local brew_root bash_prefix bison_prefix flex_prefix gettext_prefix gnu_sed_prefix
+  local make_prefix texinfo_prefix gcc15_prefix gcc_prefix gmp_prefix mpfr_prefix mpc_prefix
+  local ncurses_prefix readline_prefix
+
+  brew_root="$(brew --prefix)"
+  bash_prefix="$(brew_prefix bash)"
+  bison_prefix="$(brew_prefix bison)"
+  flex_prefix="$(brew_prefix flex)"
+  gettext_prefix="$(brew_prefix gettext)"
+  gnu_sed_prefix="$(brew_prefix gnu-sed)"
+  make_prefix="$(brew_prefix make)"
+  texinfo_prefix="$(brew_prefix texinfo)"
+  gcc15_prefix="$(brew_prefix gcc@15)"
+  gcc_prefix="$(brew_prefix gcc)"
+  gmp_prefix="$(brew_prefix gmp)"
+  mpfr_prefix="$(brew_prefix mpfr)"
+  mpc_prefix="$(brew_prefix libmpc)"
+  ncurses_prefix="$(brew_prefix ncurses)"
+  readline_prefix="$(brew_prefix readline)"
+
+  prepend_unique_path "${make_prefix}/libexec/gnubin"
+  prepend_unique_path "${gnu_sed_prefix}/libexec/gnubin"
+  prepend_unique_path "${bison_prefix}/bin"
+  prepend_unique_path "${flex_prefix}/bin"
+  prepend_unique_path "${gettext_prefix}/bin"
+  prepend_unique_path "${texinfo_prefix}/bin"
+  prepend_unique_path "${gcc_prefix}/bin"
+  prepend_unique_path "${gcc15_prefix}/bin"
+  prepend_unique_path "${brew_root}/bin"
+  append_unique_path "${brew_root}/sbin"
+  export PATH
+
+  export CPPFLAGS="${CPPFLAGS:-}"
+  export LDFLAGS="${LDFLAGS:-}"
+  export PKG_CONFIG_PATH="${PKG_CONFIG_PATH:-}"
+  add_brew_flags "$gmp_prefix"
+  add_brew_flags "$mpfr_prefix"
+  add_brew_flags "$mpc_prefix"
+  add_brew_flags "$ncurses_prefix"
+  add_brew_flags "$readline_prefix"
+
+  if [[ -n "$gettext_prefix" ]]; then
+    export ACLOCAL_PATH="${gettext_prefix}/share/aclocal${ACLOCAL_PATH:+:${ACLOCAL_PATH}}"
+  fi
+
+  if [[ -z "$HOST_CC" ]]; then
+    HOST_CC="$(find_host_compiler gcc)"
+  fi
+
+  if [[ -z "$HOST_CXX" ]]; then
+    HOST_CXX="$(find_host_compiler g++)"
+  fi
+
+  verify_host_compiler "$HOST_CC" "C" "--cc"
+  verify_host_compiler "$HOST_CXX" "C++" "--cxx"
+  log "Using host compilers: CC=${HOST_CC} CXX=${HOST_CXX}"
+
+  export CC="$HOST_CC"
+  export CXX="$HOST_CXX"
+
+  if command -v gmake >/dev/null 2>&1; then
+    MAKE_BIN="$(command -v gmake)"
+  else
+    MAKE_BIN="$(command -v make)"
+  fi
+  [[ -n "$MAKE_BIN" ]] || die "make/gmake not found"
+
+  if [[ -x "${brew_root}/bin/bash" ]]; then
+    MAKE_SHELL="${brew_root}/bin/bash"
+  elif [[ -n "$bash_prefix" && -x "${bash_prefix}/bin/bash" ]]; then
+    MAKE_SHELL="${bash_prefix}/bin/bash"
+  else
+    die "Homebrew bash not found"
+  fi
+  export MAKE_SHELL
+
+  PATCH_BIN="$(command -v gpatch || command -v patch || true)"
+  [[ -n "$PATCH_BIN" ]] || die "patch not found"
+  export PATCH_BIN
+
+  command -v git >/dev/null 2>&1 || die "git not found"
+  command -v curl >/dev/null 2>&1 || die "curl not found"
+  command -v lha >/dev/null 2>&1 || die "lha not found; Homebrew lhasa should provide it"
+  command -v python3 >/dev/null 2>&1 || die "python3 not found"
+
+  export GIT_CONFIG_COUNT=1
+  export GIT_CONFIG_KEY_0=pull.rebase
+  export GIT_CONFIG_VALUE_0=false
+}
+
+find_host_compiler() {
+  local base="$1"
+  local candidate
+  local option
+
+  if [[ "$base" == "gcc" ]]; then
+    option="--cc"
+  else
+    option="--cxx"
+  fi
+
+  for candidate in "${base}-15" "${base}-16" "${base}-14" "${base}-13" "${base}-12" "$base"; do
+    if command -v "$candidate" >/dev/null 2>&1 && is_gnu_compiler "$candidate"; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
+
+  die "no GNU ${base} compiler found; install gcc@15/Homebrew gcc or pass ${option}"
+}
+
+is_gnu_compiler() {
+  local compiler="$1"
+  local first_line
+
+  first_line="$("$compiler" --version 2>/dev/null | head -n 1 || true)"
+  [[ "$first_line" == *"GCC"* || "$first_line" == *"Free Software Foundation"* || "$first_line" == *"gcc"* ]]
+}
+
+verify_host_compiler() {
+  local compiler="$1"
+  local label="$2"
+  local option="$3"
+
+  command -v "$compiler" >/dev/null 2>&1 || die "${label} compiler not found: ${compiler}"
+  is_gnu_compiler "$compiler" || die "${label} compiler is not GNU GCC: ${compiler}; pass ${option}"
+}
+
+add_brew_flags() {
+  local prefix="$1"
+  if [[ -n "$prefix" && -d "$prefix" ]]; then
+    export CPPFLAGS="-I${prefix}/include ${CPPFLAGS}"
+    export LDFLAGS="-L${prefix}/lib ${LDFLAGS}"
+    if [[ -d "${prefix}/lib/pkgconfig" ]]; then
+      export PKG_CONFIG_PATH="${prefix}/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
+    fi
+  fi
+}
+
+ensure_amitools() {
+  if [[ "$INSTALL_AMITOOLS" -eq 0 ]]; then
+    log "Skipping amitools installation"
+    return
+  fi
+
+  local venv="${WORKDIR}/venv"
+  log "Installing amitools into ${venv}"
+  mkdir -p "$WORKDIR"
+  python3 -m venv "$venv"
+  "${venv}/bin/python" -m pip install -U pip
+  "${venv}/bin/python" -m pip install -U git+https://github.com/cnvogelg/amitools.git
+  prepend_unique_path "${venv}/bin"
+  export PATH
+}
+
+ensure_prefix_writable() {
+  local prefix="$1"
+  if [[ -d "$prefix" && -w "$prefix" ]]; then
+    return
+  fi
+
+  log "Preparing writable prefix ${prefix}"
+  sudo mkdir -p "$prefix"
+  sudo chown -R "$(id -u):$(id -g)" "$prefix"
+
+  [[ -w "$prefix" ]] || die "prefix is not writable: ${prefix}"
+}
+
+safe_remove_source() {
+  local src="$1"
+
+  [[ -n "$src" ]] || die "empty source path"
+  [[ "$src" != "/" ]] || die "refusing to remove /"
+
+  if [[ -d "$src" ]]; then
+    rm -rf "$src"
+  fi
+}
+
+prepare_source() {
+  local version="$1"
+  local src="$2"
+
+  if [[ "$REUSE_SOURCE" -eq 0 ]]; then
+    safe_remove_source "$src"
+  fi
+
+  if [[ ! -d "${src}/.git" ]]; then
+    log "Cloning ${REPO_URL} for GCC ${version}"
+    mkdir -p "$(dirname "$src")"
+    git clone --depth 1 "$REPO_URL" "$src"
+  else
+    log "Reusing source tree ${src}"
+  fi
+
+  (
+    cd "$src"
+    perl -pi -e "s#\\S+/gcc#${GCC_REPO_URL}#g" default-repos
+  )
+}
+
+patch_macos_gcc_sources() {
+  local src="$1"
+  local relative_prefix="${src}/projects/gcc/libiberty/make-relative-prefix.c"
+
+  if [[ -f "$relative_prefix" ]] && ! grep -q '#include <mach-o/dyld.h>' "$relative_prefix"; then
+    log "Patching GCC libiberty Darwin executable-path include"
+    perl -0pi -e 's|(#include <string\.h>\n)|$1\n#if defined(__MACH__)\n#include <mach-o/dyld.h>\n#endif\n|' "$relative_prefix"
+  fi
+}
+
+make_amiga() {
+  local src="$1"
+  shift
+
+  (
+    cd "$src"
+    "$MAKE_BIN" "$@" SHELL="$MAKE_SHELL"
+  )
+}
+
+make_amiga_parallel() {
+  local src="$1"
+  shift
+
+  (
+    cd "$src"
+    "$MAKE_BIN" -j "$JOBS" "$@" SHELL="$MAKE_SHELL"
+  )
+}
+
+build_gcc_version() {
+  local spec="$1"
+  local version branch prefix src sdk
+
+  version="$(version_from_spec "$spec")"
+  branch="$(branch_from_spec "$spec")"
+  [[ -n "$version" ]] || die "empty version in ${spec}"
+  [[ -n "$branch" ]] || die "empty branch in ${spec}"
+
+  prefix="${PREFIX_ROOT}/amiga-${version}"
+  src="${WORKDIR}/amiga-gcc-${version}"
+
+  log "Building GCC ${version} (${branch}) with NDK ${NDK_VERSION}"
+  ensure_prefix_writable "$prefix"
+  prepare_source "$version" "$src"
+
+  log "Building and installing GCC ${version} into ${prefix}"
+  make_amiga "$src" branch branch="$branch" mod=gcc
+  make_amiga "$src" update NDK="$NDK_VERSION"
+  patch_macos_gcc_sources "$src"
+  make_amiga_parallel "$src" all NDK="$NDK_VERSION" PREFIX="$prefix"
+
+  log "Installing SDKs for GCC ${version}"
+  for sdk in "${SDKS[@]}"; do
+    make_amiga_parallel "$src" "sdk=${sdk}" NDK="$NDK_VERSION" PREFIX="$prefix"
+  done
+  make_amiga_parallel "$src" all-sdk NDK="$NDK_VERSION" PREFIX="$prefix"
+
+  download_and_fix_includes "$src" "$prefix"
+  build_vlink_and_vbcc "$src" "$prefix"
+  install_working_vbcc "$prefix"
+  install_vbcc_configs "$prefix"
+  verify_prefix "$prefix"
+}
+
+download_and_fix_includes() {
+  local src="$1"
+  local prefix="$2"
+  local devices_dir="${prefix}/m68k-amigaos/ndk-include/devices"
+
+  log "Downloading and fixing additional include files for ${prefix}"
+  (
+    cd "$src"
+    curl -LfsS -o newstyle.h https://raw.githubusercontent.com/aros-development-team/AROS/master/compiler/include/devices/newstyle.h
+    curl -LfsS -o sana2.h https://raw.githubusercontent.com/aros-development-team/AROS/master/compiler/include/devices/sana2.h
+    curl -LfsS -o sana2specialstats.h https://raw.githubusercontent.com/aros-development-team/AROS/master/compiler/include/devices/sana2specialstats.h
+    curl -LfsS -o newstyle.diff https://dl.amigadev.com/newstyle.diff
+    if "$PATCH_BIN" --version 2>/dev/null | grep -qi 'GNU patch'; then
+      "$PATCH_BIN" --ignore-whitespace < newstyle.diff
+    else
+      "$PATCH_BIN" -l < newstyle.diff
+    fi
+    mkdir -p "$devices_dir"
+    mv -f newstyle.h sana2.h sana2specialstats.h "$devices_dir/"
+  )
+}
+
+build_vlink_and_vbcc() {
+  local src="$1"
+  local prefix="$2"
+
+  log "Building vlink and vbcc for ${prefix}"
+  (
+    cd "$src"
+    if ! grep -q '_POSIX_C_SOURCE=200809L' projects/vbcc/Makefile 2>/dev/null; then
+      "$PATCH_BIN" -p1 < "${SCRIPT_DIR}/vbcc.diff"
+    fi
+  )
+  make_amiga_parallel "$src" vlink vbcc NDK="$NDK_VERSION" PREFIX="$prefix"
+}
+
+install_working_vbcc() {
+  local prefix="$1"
+  local tmpdir="${WORKDIR}/vbcc-targets"
+  local archive="${tmpdir}/vbcc_target_m68k-amigaos.lha"
+  local extracted="${tmpdir}/vbcc_target_m68k-amigaos"
+
+  log "Installing working VBCC target files into ${prefix}"
+  rm -rf "$tmpdir"
+  mkdir -p "$tmpdir"
+  curl -LfsS -o "$archive" http://phoenix.owl.de/vbcc/2022-05-22/vbcc_target_m68k-amigaos.lha
+  (
+    cd "$tmpdir"
+    lha -x "$(basename "$archive")"
+  )
+
+  [[ -d "${extracted}/targets" ]] || die "VBCC target archive did not extract targets/"
+  mkdir -p "${prefix}/m68k-amigaos/vbcc"
+  rm -rf "${prefix}/m68k-amigaos/vbcc/targets"
+  mv "${extracted}/targets" "${prefix}/m68k-amigaos/vbcc/"
+  rm -rf "$tmpdir"
+}
+
+install_vbcc_configs() {
+  local prefix="$1"
+  local config
+
+  log "Installing VBCC config files with versioned paths into ${prefix}/bin"
+  mkdir -p "${prefix}/bin"
+  for config in aos68k aos68km aos68kr; do
+    cp "${SCRIPT_DIR}/${config}" "${prefix}/bin/${config}"
+  done
+
+  PREFIX_REPLACEMENT="${prefix}/" perl -pi -e 's|/opt/amiga/|$ENV{PREFIX_REPLACEMENT}|g' \
+    "${prefix}/bin/aos68k" \
+    "${prefix}/bin/aos68km" \
+    "${prefix}/bin/aos68kr"
+
+  VBCC_INCLUDE="${prefix}/m68k-amigaos/vbcc/include" perl -pi -e 's|-Ivincludeos3:|-I$ENV{VBCC_INCLUDE}|g' \
+    "${prefix}/bin/aos68k"
+}
+
+verify_prefix() {
+  local prefix="$1"
+
+  log "Verifying ${prefix}"
+  if [[ -x "${prefix}/bin/m68k-amigaos-gcc" ]]; then
+    "${prefix}/bin/m68k-amigaos-gcc" --version | head -n 1
+  else
+    die "missing compiler: ${prefix}/bin/m68k-amigaos-gcc"
+  fi
+
+  [[ -d "${prefix}/m68k-amigaos/vbcc/targets" ]] || die "missing VBCC targets in ${prefix}"
+  [[ -f "${prefix}/bin/aos68k" ]] || die "missing VBCC config aos68k in ${prefix}"
+}
+
+link_default_prefix() {
+  if [[ -z "$DEFAULT_SYMLINK_VERSION" ]]; then
+    return
+  fi
+
+  local target="${PREFIX_ROOT}/amiga-${DEFAULT_SYMLINK_VERSION}"
+  [[ -d "$target" ]] || die "cannot link /opt/amiga; target does not exist: ${target}"
+
+  if [[ "$PREFIX_ROOT" != "/opt" ]]; then
+    die "--link-default only manages /opt/amiga when --prefix-root is /opt"
+  fi
+
+  log "Linking /opt/amiga -> ${target}"
+  sudo ln -sfn "$target" /opt/amiga
+}
+
+main() {
+  parse_args "$@"
+
+  [[ "$(uname -s)" == "Darwin" ]] || die "build_mac.sh is intended for macOS"
+  [[ -f "${SCRIPT_DIR}/vbcc.diff" ]] || die "missing ${SCRIPT_DIR}/vbcc.diff"
+  detect_jobs
+
+  log "Using ${JOBS} parallel jobs"
+  ensure_brew
+  configure_macos_tools
+  ensure_amitools
+
+  local spec
+  for spec in "${VERSION_SPECS[@]}"; do
+    build_gcc_version "$spec"
+  done
+
+  link_default_prefix
+  log "Done"
+}
+
+main "$@"
