@@ -1,0 +1,890 @@
+diff --git a/gcc/config/m68k/m68kamigaos.h b/gcc/config/m68k/m68kamigaos.h
+index 1bfc8b0bc..47ef840d3 100644
+--- a/gcc/config/m68k/m68kamigaos.h
++++ b/gcc/config/m68k/m68kamigaos.h
+@@ -524,7 +524,7 @@ if (target_flags & (MASK_RESTORE_A4|MASK_ALWAYS_RESTORE_A4)) \
+     "%{!MM:" \
+       "%{!E:" \
+         "%{!S:" \
+-          "%(linker) -Cvbcc %l %X %{o*} %{A} %{d} %{e*} %{m} " \
++          "%(linker) " LINK_PLUGIN_SPEC "-Cvbcc %l %X %{o*} %{A} %{d} %{e*} %{m} " \
+           "%{N} %{n} %{r} %{s} %{t} %{u*} %{x} %{z} %{Z} " \
+           "%{!A:%{!nostdlib:%{!nostartfiles:%S}}} " \
+           "%{static:} %{L*} %F %o " \
+@@ -541,7 +541,7 @@ if (target_flags & (MASK_RESTORE_A4|MASK_ALWAYS_RESTORE_A4)) \
+     "%{!MM:" \
+       "%{!E:" \
+         "%{!S:" \
+-          "%(linker) %l %X %{o*} %{A} %{d} %{e*} %{m} " \
++          "%(linker) " LINK_PLUGIN_SPEC "%l %X %{o*} %{A} %{d} %{e*} %{m} " \
+           "%{N} %{n} %{r} %{s} %{t} %{u*} %{x} %{z} %{Z} " \
+           "%{!A:%{!nostdlib:%{!nostartfiles:%S}}} " \
+           "%{static:} %{L*} %F -L%:sdk_root(lib/) -L%:sdk_root(../lib/) %o " \
+diff --git a/libiberty/Makefile.in b/libiberty/Makefile.in
+index 72608f3e4..993d93e1b 100644
+--- a/libiberty/Makefile.in
++++ b/libiberty/Makefile.in
+@@ -148,7 +148,8 @@ CFILES = alloca.c argv.c asprintf.c atexit.c				\
+ 	random.c regex.c rename.c rindex.c				\
+ 	rust-demangle.c							\
+ 	safe-ctype.c setenv.c setproctitle.c sha1.c sigsetmask.c        \
+-	 simple-object.c simple-object-coff.c simple-object-elf.c	\
++	 simple-object.c simple-object-amiga.c simple-object-coff.c	\
++	 simple-object-elf.c						\
+ 	 simple-object-mach-o.c simple-object-xcoff.c			\
+          snprintf.c sort.c						\
+ 	 spaces.c splay-tree.c stack-limit.c stpcpy.c stpncpy.c		\
+@@ -188,7 +189,8 @@ REQUIRED_OFILES =							\
+ 	./@pexecute@.$(objext) ./vprintf-support.$(objext)		\
+ 	./rust-demangle.$(objext)					\
+ 	./safe-ctype.$(objext)						\
+-	./simple-object.$(objext) ./simple-object-coff.$(objext)	\
++	./simple-object.$(objext) ./simple-object-amiga.$(objext)	\
++	./simple-object-coff.$(objext)					\
+ 	./simple-object-elf.$(objext) ./simple-object-mach-o.$(objext)	\
+ 	./simple-object-xcoff.$(objext)					\
+ 	./sort.$(objext) ./spaces.$(objext)				\
+@@ -1297,6 +1299,17 @@ $(CONFIGURED_OFILES): stamp-picdir stamp-noasandir
+ 	else true; fi
+ 	$(COMPILE.c) $(srcdir)/sigsetmask.c $(OUTPUT_OPTION)
+ 
++./simple-object-amiga.$(objext): $(srcdir)/simple-object-amiga.c config.h \
++	$(INCDIR)/ansidecl.h $(INCDIR)/libiberty.h \
++	$(srcdir)/simple-object-common.h $(INCDIR)/simple-object.h
++	if [ x"$(PICFLAG)" != x ]; then \
++	  $(COMPILE.c) $(PICFLAG) $(srcdir)/simple-object-amiga.c -o pic/$@; \
++	else true; fi
++	if [ x"$(NOASANFLAG)" != x ]; then \
++	  $(COMPILE.c) $(PICFLAG) $(NOASANFLAG) $(srcdir)/simple-object-amiga.c -o noasan/$@; \
++	else true; fi
++	$(COMPILE.c) $(srcdir)/simple-object-amiga.c $(OUTPUT_OPTION)
++
+ ./simple-object-coff.$(objext): $(srcdir)/simple-object-coff.c config.h \
+ 	$(INCDIR)/ansidecl.h $(INCDIR)/libiberty.h \
+ 	$(srcdir)/simple-object-common.h $(INCDIR)/simple-object.h
+diff --git a/libiberty/simple-object-amiga.c b/libiberty/simple-object-amiga.c
+new file mode 100644
+index 000000000..1d05c11f7
+--- /dev/null
++++ b/libiberty/simple-object-amiga.c
+@@ -0,0 +1,796 @@
++/* simple-object-amiga.c -- routines to read Amiga HUNK objects.
++   Copyright (C) 2026 Free Software Foundation, Inc.
++
++This program is free software; you can redistribute it and/or modify it
++under the terms of the GNU General Public License as published by the
++Free Software Foundation; either version 2, or (at your option) any
++later version.
++
++This program is distributed in the hope that it will be useful,
++but WITHOUT ANY WARRANTY; without even the implied warranty of
++MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++General Public License for more details.
++
++You should have received a copy of the GNU General Public License
++along with this program; if not, write to the Free Software
++Foundation, 51 Franklin Street - Fifth Floor, Boston, MA 02110-1301, USA.  */
++
++#include "config.h"
++#include "libiberty.h"
++#include "simple-object.h"
++
++#ifdef HAVE_STDLIB_H
++#include <stdlib.h>
++#endif
++
++#ifdef HAVE_STRING_H
++#include <string.h>
++#endif
++
++#include "simple-object-common.h"
++
++#define HUNK_UNIT 999
++#define HUNK_NAME 1000
++#define HUNK_CODE 1001
++#define HUNK_DATA 1002
++#define HUNK_BSS 1003
++#define HUNK_RELOC32 1004
++#define HUNK_RELOC16 1005
++#define HUNK_RELOC8 1006
++#define HUNK_EXT 1007
++#define HUNK_SYMBOL 1008
++#define HUNK_DEBUG 1009
++#define HUNK_END 1010
++#define HUNK_DREL32 1015
++#define HUNK_DREL16 1016
++#define HUNK_DREL8 1017
++#define HUNK_RELOC32SHORT 1020
++#define HUNK_RELRELOC32 1021
++#define HUNK_ABSRELOC16 1022
++#define HUNK_RELRELOC26 1260
++
++#define HUNK_VALUE(hunk_id) ((hunk_id) & 0x3fffffff)
++#define AMIGA_LTO_DEBUG_MAGIC 0x4c544f31 /* "LTO1" */
++#define AMIGA_LTO_DEBUG_HEADER_SIZE 8
++
++#define EXT_SYMB 0
++#define EXT_DEF 1
++#define EXT_ABS 2
++#define EXT_ABSREF32 129
++#define EXT_COMMON 130
++#define EXT_RELREF16 131
++#define EXT_RELREF8 132
++#define EXT_DEXT32 133
++#define EXT_DEXT16 134
++#define EXT_DEXT8 135
++#define EXT_RELREF32 136
++#define EXT_RELCOMMON 137
++#define EXT_ABSREF16 138
++#define EXT_ABSREF8 139
++#define EXT_DEXT32COMMON 208
++#define EXT_DEXT16COMMON 209
++#define EXT_DEXT8COMMON 210
++#define EXT_RELREF26 229
++
++struct simple_object_amiga_section
++{
++  char *name;
++  off_t offset;
++  off_t length;
++  struct simple_object_amiga_section *next;
++};
++
++struct simple_object_amiga_read
++{
++  struct simple_object_amiga_section *sections;
++  struct simple_object_amiga_section **tail;
++};
++
++struct simple_object_amiga_attributes
++{
++  int unused;
++};
++
++struct simple_object_amiga_write
++{
++  int unused;
++};
++
++static unsigned long
++simple_object_amiga_fetch_32 (const unsigned char *buf)
++{
++  return (((unsigned long) buf[0] << 24)
++	  | ((unsigned long) buf[1] << 16)
++	  | ((unsigned long) buf[2] << 8)
++	  | (unsigned long) buf[3]);
++}
++
++static unsigned int
++simple_object_amiga_fetch_16 (const unsigned char *buf)
++{
++  return (((unsigned int) buf[0] << 8) | (unsigned int) buf[1]);
++}
++
++static int
++simple_object_amiga_read_32 (int descriptor, off_t offset,
++			     unsigned long *value,
++			     const char **errmsg, int *err)
++{
++  unsigned char buf[4];
++
++  if (!simple_object_internal_read (descriptor, offset, buf, sizeof (buf),
++				    errmsg, err))
++    return 0;
++
++  *value = simple_object_amiga_fetch_32 (buf);
++  return 1;
++}
++
++static int
++simple_object_amiga_read_16 (int descriptor, off_t offset,
++			     unsigned int *value,
++			     const char **errmsg, int *err)
++{
++  unsigned char buf[2];
++
++  if (!simple_object_internal_read (descriptor, offset, buf, sizeof (buf),
++				    errmsg, err))
++    return 0;
++
++  *value = simple_object_amiga_fetch_16 (buf);
++  return 1;
++}
++
++static int
++simple_object_amiga_write_32 (int descriptor, off_t offset,
++			      unsigned long value,
++			      const char **errmsg, int *err)
++{
++  unsigned char buf[4];
++
++  buf[0] = (value >> 24) & 0xff;
++  buf[1] = (value >> 16) & 0xff;
++  buf[2] = (value >> 8) & 0xff;
++  buf[3] = value & 0xff;
++
++  return simple_object_internal_write (descriptor, offset, buf, sizeof (buf),
++				       errmsg, err);
++}
++
++static const char *
++simple_object_amiga_write_name (int descriptor, off_t *offset,
++				const char *name, int *err)
++{
++  const char *errmsg;
++  size_t len = strlen (name);
++  size_t padded = (len + 3) & ~(size_t) 3;
++  unsigned char zero[3] = { 0, 0, 0 };
++
++  if (!simple_object_amiga_write_32 (descriptor, *offset, padded / 4,
++				     &errmsg, err))
++    return errmsg;
++  *offset += 4;
++
++  if (len != 0
++      && !simple_object_internal_write (descriptor, *offset,
++					(const unsigned char *) name, len,
++					&errmsg, err))
++    return errmsg;
++  *offset += len;
++
++  if (padded != len
++      && !simple_object_internal_write (descriptor, *offset, zero,
++					padded - len, &errmsg, err))
++    return errmsg;
++  *offset += padded - len;
++
++  return NULL;
++}
++
++static void
++simple_object_amiga_add_section (struct simple_object_amiga_read *amiga,
++				 char *name, off_t offset, off_t length)
++{
++  struct simple_object_amiga_section *section;
++
++  section = XNEW (struct simple_object_amiga_section);
++  section->name = name;
++  section->offset = offset;
++  section->length = length;
++  section->next = NULL;
++  *amiga->tail = section;
++  amiga->tail = &section->next;
++}
++
++static int
++simple_object_amiga_is_lto_section (const char *name)
++{
++  return strncmp (name, ".gnu.lto", 8) == 0;
++}
++
++static int
++simple_object_amiga_is_padded_lto_section (const char *name)
++{
++  if (!simple_object_amiga_is_lto_section (name))
++    return 0;
++
++  if (strcmp (name, ".gnu.lto_.opts") == 0)
++    return 0;
++
++  if (strncmp (name, ".gnu.lto_.symtab", 16) == 0
++      || strncmp (name, ".gnu.lto_.ext_symtab", 20) == 0
++      || strncmp (name, ".gnu.lto_.lto", 13) == 0)
++    return 0;
++
++  return 1;
++}
++
++static off_t
++simple_object_amiga_trim_lto_padding (int descriptor, off_t offset,
++				      off_t length,
++				      const char **errmsg, int *err)
++{
++  unsigned char buf[3];
++  size_t count;
++
++  if (length <= 0)
++    return length;
++
++  count = length < 3 ? (size_t) length : 3;
++  if (!simple_object_internal_read (descriptor, offset + length - count,
++				    buf, count, errmsg, err))
++    return length;
++
++  while (count != 0 && buf[count - 1] == 0)
++    {
++      --count;
++      --length;
++    }
++
++  return length;
++}
++
++static int
++simple_object_amiga_read_lto_header (int descriptor, off_t *offset,
++				     off_t *length,
++				     const char **errmsg, int *err)
++{
++  unsigned char header[AMIGA_LTO_DEBUG_HEADER_SIZE];
++  unsigned long magic;
++  unsigned long payload_length;
++
++  if (*length < AMIGA_LTO_DEBUG_HEADER_SIZE)
++    return 0;
++
++  if (!simple_object_internal_read (descriptor, *offset, header,
++				    sizeof (header), errmsg, err))
++    return -1;
++
++  magic = simple_object_amiga_fetch_32 (header);
++  if (magic != AMIGA_LTO_DEBUG_MAGIC)
++    return 0;
++
++  payload_length = simple_object_amiga_fetch_32 (header + 4);
++  if ((off_t) payload_length > *length - AMIGA_LTO_DEBUG_HEADER_SIZE)
++    {
++      *errmsg = "invalid Amiga LTO debug hunk length";
++      *err = 0;
++      return -1;
++    }
++
++  *offset += AMIGA_LTO_DEBUG_HEADER_SIZE;
++  *length = payload_length;
++  return 1;
++}
++
++static char *
++simple_object_amiga_read_name (int descriptor, off_t *offset,
++			       const char **errmsg, int *err)
++{
++  unsigned long name_words;
++  size_t name_len;
++  char *name;
++
++  if (!simple_object_amiga_read_32 (descriptor, *offset, &name_words,
++				    errmsg, err))
++    return NULL;
++  *offset += 4;
++
++  name_len = HUNK_VALUE (name_words) * 4;
++  name = XNEWVEC (char, name_len + 1);
++  if (name_len != 0
++      && !simple_object_internal_read (descriptor, *offset,
++				       (unsigned char *) name, name_len,
++				       errmsg, err))
++    {
++      XDELETEVEC (name);
++      return NULL;
++    }
++
++  name[name_len] = '\0';
++  *offset += name_len;
++  return name;
++}
++
++static int
++simple_object_amiga_skip_ext (int descriptor, off_t *offset,
++			      const char **errmsg, int *err)
++{
++  unsigned long entry;
++
++  if (!simple_object_amiga_read_32 (descriptor, *offset, &entry, errmsg, err))
++    return 0;
++  *offset += 4;
++
++  while (entry != 0)
++    {
++      unsigned long len = entry & 0x00ffffff;
++      unsigned long type = (entry >> 24) & 0xff;
++      unsigned long count;
++
++      if (type < 200)
++	type &= ~0x60;
++
++      switch (type)
++	{
++	case EXT_SYMB:
++	case EXT_DEF:
++	case EXT_ABS:
++	  *offset += (len + 1) * 4;
++	  break;
++
++	case EXT_ABSREF32:
++	case EXT_RELREF16:
++	case EXT_RELREF8:
++	case EXT_DEXT32:
++	case EXT_DEXT16:
++	case EXT_DEXT8:
++	case EXT_RELREF32:
++	case EXT_ABSREF16:
++	case EXT_ABSREF8:
++	case EXT_RELREF26:
++	  *offset += len * 4;
++	  if (!simple_object_amiga_read_32 (descriptor, *offset, &count,
++					    errmsg, err))
++	    return 0;
++	  *offset += 4 + count * 4;
++	  break;
++
++	case EXT_COMMON:
++	case EXT_RELCOMMON:
++	case EXT_DEXT32COMMON:
++	case EXT_DEXT16COMMON:
++	case EXT_DEXT8COMMON:
++	  *offset += (len + 1) * 4;
++	  if (!simple_object_amiga_read_32 (descriptor, *offset, &count,
++					    errmsg, err))
++	    return 0;
++	  *offset += 4 + count * 4;
++	  break;
++
++	default:
++	  return 0;
++	}
++
++      if (!simple_object_amiga_read_32 (descriptor, *offset, &entry,
++					errmsg, err))
++	return 0;
++      *offset += 4;
++    }
++
++  return 1;
++}
++
++static int
++simple_object_amiga_skip_relocs (int descriptor, off_t *offset,
++				 const char **errmsg, int *err)
++{
++  unsigned long count;
++
++  if (!simple_object_amiga_read_32 (descriptor, *offset, &count, errmsg, err))
++    return 0;
++  *offset += 4;
++
++  while (count != 0)
++    {
++      *offset += 4 + count * 4;
++      if (!simple_object_amiga_read_32 (descriptor, *offset, &count,
++					errmsg, err))
++	return 0;
++      *offset += 4;
++    }
++
++  return 1;
++}
++
++static int
++simple_object_amiga_skip_short_relocs (int descriptor, off_t *offset,
++				       const char **errmsg, int *err)
++{
++  unsigned int count;
++
++  if (!simple_object_amiga_read_16 (descriptor, *offset, &count, errmsg, err))
++    return 0;
++  *offset += 2;
++
++  while (count != 0)
++    {
++      *offset += (count + 1) * 2;
++      if (!simple_object_amiga_read_16 (descriptor, *offset, &count,
++					errmsg, err))
++	return 0;
++      *offset += 2;
++    }
++
++  if ((*offset & 2) != 0)
++    *offset += 2;
++
++  return 1;
++}
++
++static int
++simple_object_amiga_skip_symbols (int descriptor, off_t *offset,
++				  const char **errmsg, int *err)
++{
++  unsigned long name_words;
++
++  if (!simple_object_amiga_read_32 (descriptor, *offset, &name_words,
++				    errmsg, err))
++    return 0;
++  *offset += 4;
++
++  while (name_words != 0)
++    {
++      *offset += (name_words + 1) * 4;
++      if (!simple_object_amiga_read_32 (descriptor, *offset, &name_words,
++					errmsg, err))
++	return 0;
++      *offset += 4;
++    }
++
++  return 1;
++}
++
++static void
++simple_object_amiga_release_sections (struct simple_object_amiga_read *amiga)
++{
++  struct simple_object_amiga_section *section = amiga->sections;
++
++  while (section != NULL)
++    {
++      struct simple_object_amiga_section *next = section->next;
++      XDELETEVEC (section->name);
++      XDELETE (section);
++      section = next;
++    }
++}
++
++static void *
++simple_object_amiga_match (unsigned char header[SIMPLE_OBJECT_MATCH_HEADER_LEN],
++			   int descriptor, off_t offset,
++			   const char *segment_name ATTRIBUTE_UNUSED,
++			   const char **errmsg, int *err)
++{
++  struct simple_object_amiga_read *amiga;
++  char *name;
++  off_t pos;
++  unsigned long hunk_type;
++
++  if (simple_object_amiga_fetch_32 (header) != HUNK_UNIT)
++    {
++      *errmsg = NULL;
++      *err = 0;
++      return NULL;
++    }
++
++  amiga = XNEW (struct simple_object_amiga_read);
++  amiga->sections = NULL;
++  amiga->tail = &amiga->sections;
++
++  pos = offset + 4;
++  name = simple_object_amiga_read_name (descriptor, &pos, errmsg, err);
++  if (name == NULL)
++    {
++      XDELETE (amiga);
++      return NULL;
++    }
++  XDELETEVEC (name);
++  name = NULL;
++
++  while (simple_object_amiga_read_32 (descriptor, pos, &hunk_type,
++				      errmsg, err))
++    {
++      unsigned long hunk_value = HUNK_VALUE (hunk_type);
++      unsigned long hunk_size;
++
++      pos += 4;
++      switch (hunk_value)
++	{
++	case HUNK_NAME:
++	  if (name != NULL)
++	    XDELETEVEC (name);
++	  name = simple_object_amiga_read_name (descriptor, &pos, errmsg, err);
++	  if (name == NULL)
++	    goto fail;
++	  break;
++
++	case HUNK_CODE:
++	case HUNK_DATA:
++	case HUNK_DEBUG:
++	  if (!simple_object_amiga_read_32 (descriptor, pos, &hunk_size,
++					    errmsg, err))
++	    goto fail;
++	  pos += 4;
++	  hunk_size = HUNK_VALUE (hunk_size) * 4;
++	  if (hunk_value == HUNK_DEBUG && name != NULL && name[0] != '\0')
++	    {
++	      off_t section_offset = pos;
++	      off_t length = hunk_size;
++	      int has_lto_header = 0;
++
++	      if (simple_object_amiga_is_lto_section (name))
++		{
++		  has_lto_header =
++		    simple_object_amiga_read_lto_header (descriptor,
++							 &section_offset,
++							 &length,
++							 errmsg, err);
++		  if (has_lto_header < 0)
++		    goto fail;
++		}
++	      if (has_lto_header == 0
++		  && simple_object_amiga_is_padded_lto_section (name))
++		length =
++		  simple_object_amiga_trim_lto_padding (descriptor,
++							section_offset,
++							length,
++							errmsg, err);
++	      simple_object_amiga_add_section (amiga, name,
++					       section_offset - offset,
++					       length);
++	      name = NULL;
++	    }
++	  pos += hunk_size;
++	  if (name != NULL)
++	    {
++	      XDELETEVEC (name);
++	      name = NULL;
++	    }
++	  break;
++
++	case HUNK_BSS:
++	  pos += 4;
++	  if (name != NULL)
++	    {
++	      XDELETEVEC (name);
++	      name = NULL;
++	    }
++	  break;
++
++	case HUNK_RELOC32:
++	case HUNK_RELOC16:
++	case HUNK_RELOC8:
++	case HUNK_DREL32:
++	case HUNK_DREL16:
++	case HUNK_DREL8:
++	case HUNK_RELRELOC32:
++	case HUNK_ABSRELOC16:
++	case HUNK_RELRELOC26:
++	  if (!simple_object_amiga_skip_relocs (descriptor, &pos, errmsg, err))
++	    goto fail;
++	  break;
++
++	case HUNK_RELOC32SHORT:
++	  if (!simple_object_amiga_skip_short_relocs (descriptor, &pos,
++						      errmsg, err))
++	    goto fail;
++	  break;
++
++	case HUNK_SYMBOL:
++	  if (!simple_object_amiga_skip_symbols (descriptor, &pos,
++						 errmsg, err))
++	    goto fail;
++	  break;
++
++	case HUNK_EXT:
++	  if (!simple_object_amiga_skip_ext (descriptor, &pos, errmsg, err))
++	    goto fail;
++	  break;
++
++	case HUNK_END:
++	  if (name != NULL)
++	    {
++	      XDELETEVEC (name);
++	      name = NULL;
++	    }
++	  break;
++
++	default:
++	  goto done;
++	}
++    }
++
++done:
++  if (name != NULL)
++    XDELETEVEC (name);
++  *errmsg = NULL;
++  *err = 0;
++  return amiga;
++
++fail:
++  if (name != NULL)
++    XDELETEVEC (name);
++  simple_object_amiga_release_sections (amiga);
++  XDELETE (amiga);
++  return NULL;
++}
++
++static const char *
++simple_object_amiga_find_sections (simple_object_read *sobj,
++				   int (*pfn) (void *, const char *,
++					       off_t offset, off_t length),
++				   void *data, int *err ATTRIBUTE_UNUSED)
++{
++  struct simple_object_amiga_read *amiga =
++    (struct simple_object_amiga_read *) sobj->data;
++  struct simple_object_amiga_section *section;
++
++  for (section = amiga->sections; section != NULL; section = section->next)
++    if (!(*pfn) (data, section->name, section->offset, section->length))
++      break;
++
++  return NULL;
++}
++
++static void *
++simple_object_amiga_fetch_attributes (simple_object_read *sobj ATTRIBUTE_UNUSED,
++				      const char **errmsg ATTRIBUTE_UNUSED,
++				      int *err ATTRIBUTE_UNUSED)
++{
++  return XNEW (struct simple_object_amiga_attributes);
++}
++
++static void
++simple_object_amiga_release_read (void *data)
++{
++  struct simple_object_amiga_read *amiga =
++    (struct simple_object_amiga_read *) data;
++
++  simple_object_amiga_release_sections (amiga);
++  XDELETE (amiga);
++}
++
++static const char *
++simple_object_amiga_attributes_merge (void *todata ATTRIBUTE_UNUSED,
++				      void *fromdata ATTRIBUTE_UNUSED,
++				      int *err ATTRIBUTE_UNUSED)
++{
++  return NULL;
++}
++
++static void
++simple_object_amiga_release_attributes (void *data)
++{
++  XDELETE (data);
++}
++
++static void *
++simple_object_amiga_start_write (void *attributes_data ATTRIBUTE_UNUSED,
++				 const char **errmsg ATTRIBUTE_UNUSED,
++				 int *err ATTRIBUTE_UNUSED)
++{
++  return XNEW (struct simple_object_amiga_write);
++}
++
++static const char *
++simple_object_amiga_write_to_file (simple_object_write *sobj, int descriptor,
++				   int *err)
++{
++  simple_object_write_section *section;
++  const char *errmsg;
++  off_t offset = 0;
++
++  if (!simple_object_amiga_write_32 (descriptor, offset, HUNK_UNIT, &errmsg,
++				     err))
++    return errmsg;
++  offset += 4;
++
++  errmsg = simple_object_amiga_write_name (descriptor, &offset, "", err);
++  if (errmsg != NULL)
++    return errmsg;
++
++  for (section = sobj->sections; section != NULL; section = section->next)
++    {
++      struct simple_object_write_section_buffer *buffer;
++      size_t size = 0;
++      size_t lto_header_size = 0;
++      size_t hunk_size;
++      size_t pad;
++      unsigned char zero[3] = { 0, 0, 0 };
++
++      for (buffer = section->buffers; buffer != NULL; buffer = buffer->next)
++	size += buffer->size;
++      if (simple_object_amiga_is_lto_section (section->name))
++	lto_header_size = AMIGA_LTO_DEBUG_HEADER_SIZE;
++      hunk_size = size + lto_header_size;
++
++      if (!simple_object_amiga_write_32 (descriptor, offset, HUNK_NAME,
++					 &errmsg, err))
++	return errmsg;
++      offset += 4;
++
++      errmsg = simple_object_amiga_write_name (descriptor, &offset,
++					       section->name, err);
++      if (errmsg != NULL)
++	return errmsg;
++
++      if (!simple_object_amiga_write_32 (descriptor, offset, HUNK_DEBUG,
++					 &errmsg, err))
++	return errmsg;
++      offset += 4;
++
++      if (!simple_object_amiga_write_32 (descriptor, offset,
++					 (hunk_size + 3) / 4,
++					 &errmsg, err))
++	return errmsg;
++      offset += 4;
++
++      if (lto_header_size != 0)
++	{
++	  if (!simple_object_amiga_write_32 (descriptor, offset,
++					     AMIGA_LTO_DEBUG_MAGIC,
++					     &errmsg, err))
++	    return errmsg;
++	  offset += 4;
++	  if (!simple_object_amiga_write_32 (descriptor, offset, size,
++					     &errmsg, err))
++	    return errmsg;
++	  offset += 4;
++	}
++
++      for (buffer = section->buffers; buffer != NULL; buffer = buffer->next)
++	{
++	  if (buffer->size != 0
++	      && !simple_object_internal_write (descriptor, offset,
++						(const unsigned char *)
++						buffer->buffer,
++						buffer->size, &errmsg, err))
++	    return errmsg;
++	  offset += buffer->size;
++	}
++
++      pad = ((hunk_size + 3) & ~(size_t) 3) - hunk_size;
++      if (pad != 0
++	  && !simple_object_internal_write (descriptor, offset, zero, pad,
++					    &errmsg, err))
++	return errmsg;
++      offset += pad;
++
++      if (!simple_object_amiga_write_32 (descriptor, offset, HUNK_END,
++					 &errmsg, err))
++	return errmsg;
++      offset += 4;
++    }
++
++  return NULL;
++}
++
++static void
++simple_object_amiga_release_write (void *data)
++{
++  XDELETE (data);
++}
++
++const struct simple_object_functions simple_object_amiga_functions =
++{
++  simple_object_amiga_match,
++  simple_object_amiga_find_sections,
++  simple_object_amiga_fetch_attributes,
++  simple_object_amiga_release_read,
++  simple_object_amiga_attributes_merge,
++  simple_object_amiga_release_attributes,
++  simple_object_amiga_start_write,
++  simple_object_amiga_write_to_file,
++  simple_object_amiga_release_write,
++  NULL
++};
+diff --git a/libiberty/simple-object-common.h b/libiberty/simple-object-common.h
+index b9d10550d..8f34b4a71 100644
+--- a/libiberty/simple-object-common.h
++++ b/libiberty/simple-object-common.h
+@@ -152,6 +152,7 @@ struct simple_object_functions
+ /* The known object file formats.  */
+ 
+ extern const struct simple_object_functions simple_object_coff_functions;
++extern const struct simple_object_functions simple_object_amiga_functions;
+ extern const struct simple_object_functions simple_object_elf_functions;
+ extern const struct simple_object_functions simple_object_mach_o_functions;
+ extern const struct simple_object_functions simple_object_xcoff_functions;
+diff --git a/libiberty/simple-object.c b/libiberty/simple-object.c
+index 163e58a2f..8b7eccffb 100644
+--- a/libiberty/simple-object.c
++++ b/libiberty/simple-object.c
+@@ -54,6 +54,7 @@ Boston, MA 02110-1301, USA.  */
+ 
+ static const struct simple_object_functions * const format_functions[] =
+ {
++  &simple_object_amiga_functions,
+   &simple_object_elf_functions,
+   &simple_object_mach_o_functions,
+   &simple_object_coff_functions,

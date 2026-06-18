@@ -8,6 +8,7 @@ ARG BUILD_GCC_VERSION=6.5.0b
 
 # NDK version - defaults to 3.9 for GCC 15.2, 3.2 for others
 ARG NDK_VERSION
+ARG BUILD_AMIGA_LTO=0
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -16,7 +17,7 @@ RUN apt-get -y update && \
     apt-get -y install \
       apt-utils curl file git python3 python3-pip srecord \
       wget autoconf automake bison flex g++ gcc gettext git libgmpxx4ldbl libgmp-dev \
-      libmpfr6 libmpfr-dev libmpc3 libmpc-dev libncurses-dev make rsync \
+      libmpfr6 libmpfr-dev libmpc3 libmpc-dev libncurses-dev make patch perl rsync \
       texinfo zip
 
 # Build and install lha from source
@@ -36,6 +37,7 @@ RUN apt-get -y autoremove && \
     pip3 install -U git+https://github.com/cnvogelg/amitools.git
 
 COPY vbcc.diff /root
+COPY patches /root/patches
 
 # Install Bebbo's amiga-gcc
 RUN NDK=${NDK_VERSION:-$([ "${BUILD_GCC_VERSION}" = "15.2" ] && echo "3.9" || echo "3.2")} && \
@@ -43,10 +45,35 @@ RUN NDK=${NDK_VERSION:-$([ "${BUILD_GCC_VERSION}" = "15.2" ] && echo "3.9" || ec
     cd /root && \
     git clone --depth 1 https://github.com/AmigaPorts/m68k-amigaos-gcc amiga-gcc && \
     cd /root/amiga-gcc && \
+    if [ "${BUILD_AMIGA_LTO}" = "1" ] && [ "${BUILD_GCC_VERSION}" != "13.3" ]; then \
+      echo "BUILD_AMIGA_LTO=1 currently requires BUILD_GCC_VERSION=13.3" >&2; \
+      exit 1; \
+    fi && \
     sed -i -r 's#\S+/gcc#https://github.com/AmigaPorts/gcc#g' default-repos && \
     mkdir -p /opt/amiga-${BUILD_GCC_VERSION} && \
     make branch branch=${BUILD_GCC_BRANCH} mod=gcc && \
     make update NDK=${NDK} && \
+    if ! grep -q 'CODEX_LIBDEBUG_AFTER_LIBGCC' Makefile; then \
+      perl -0pi -e 's@(# libdebug\n)@$1# CODEX_LIBDEBUG_AFTER_LIBGCC\n@' Makefile; \
+    fi && \
+    if ! grep -Fq '$(BUILD)/libdebug/Makefile: $(BUILD)/gcc/_libgcc_done' Makefile; then \
+      LIBDEBUG_DEPS_LINE='$(BUILD)/libdebug/Makefile: $(BUILD)/gcc/_libgcc_done $(BUILD)/libnix/_done $(PROJECTS)/libdebug/configure $(shell find 2>/dev/null $(PROJECTS)/libdebug -not \( -path $(PROJECTS)/libdebug/.git -prune \) -type f)' \
+        perl -0pi -e 's@^\$\(BUILD\)/libdebug/Makefile:.*$@$ENV{LIBDEBUG_DEPS_LINE}@m' Makefile; \
+    fi && \
+    if [ "${BUILD_AMIGA_LTO}" = "1" ]; then \
+      patch --forward --batch -d projects/binutils -p1 -i /root/patches/amiga-lto-binutils.patch && \
+      patch --forward --batch -d projects/gcc -p1 -i /root/patches/amiga-lto-gcc.patch && \
+      perl -0pi -e 's@ifneq \(m68k-elf,\$\(TARGET\)\)\nCONFIG_BINUTILS \+= --disable-plugins\nendif\n@CONFIG_BINUTILS += --enable-plugins # CODEX_AMIGA_LTO_PLUGINS\n@' Makefile && \
+      grep -q 'CODEX_AMIGA_LTO_PLUGINS' Makefile && \
+      BUILD_DIR="build-$(uname -s)-m68k-amigaos" && \
+      if [ -d "${BUILD_DIR}/binutils" ]; then \
+        find "${BUILD_DIR}/binutils" -name config.cache -type f -delete; \
+      fi && \
+      if [ -d "${BUILD_DIR}/gcc" ]; then \
+        find "${BUILD_DIR}/gcc" -name config.cache -type f -delete; \
+      fi && \
+      rm -f "${BUILD_DIR}/binutils/Makefile" "${BUILD_DIR}/binutils/_done"; \
+    fi && \
     make -j $(nproc) all NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION}
 
 # Install all SDKs
@@ -121,4 +148,4 @@ ENV PATH=/opt/amiga/bin:$PATH
 # Add labels for documentation
 LABEL gcc.version="${BUILD_GCC_VERSION}"
 LABEL gcc.branch="${BUILD_GCC_BRANCH}"
-
+LABEL gcc.amiga_lto="${BUILD_AMIGA_LTO}"

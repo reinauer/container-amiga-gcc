@@ -15,6 +15,8 @@ INSTALL_APT=1
 INSTALL_AMITOOLS=1
 REUSE_SOURCE=0
 DEFAULT_SYMLINK_VERSION=""
+PREFIX_OVERRIDE=""
+ENABLE_AMIGA_LTO=0
 HOST_CC="${CC:-}"
 HOST_CXX="${CXX:-}"
 VERSION_SPECS=()
@@ -90,6 +92,7 @@ Options:
                              Known versions: 13.3 -> amiga13.3,
                              6.5.0b -> amiga6, 15.2 -> amiga15.2
   --prefix-root DIR          Install under DIR/TEMPLATE (default: /opt)
+  --prefix DIR               Install a single requested version into DIR
   --prefix-template TEMPLATE Directory name under --prefix-root.
                              Supports {version} and {date}
                              (default: amiga-v{version}-{date})
@@ -100,9 +103,13 @@ Options:
   --repo URL                 Main amiga-gcc repository URL
   --cc PATH_OR_NAME          Host C compiler (default: prefer gcc-15/gcc)
   --cxx PATH_OR_NAME         Host C++ compiler (default: prefer g++-15/g++)
+  --enable-amiga-lto         Apply experimental Amiga HUNK LTO patches and
+                             build binutils with linker plugin support
   --skip-apt                 Do not install missing Ubuntu packages
   --skip-amitools            Do not create a local amitools Python venv
   --reuse-source             Reuse existing per-version source trees
+                             Generated build directories are reused only when
+                             they match the requested prefix and LTO mode
   --link-default VERSION     Create/update /opt/amiga -> the matching versioned prefix
   -h, --help                 Show this help
 
@@ -110,6 +117,7 @@ Examples:
   ./build_linux.sh
   ./build_linux.sh --date 20260518
   ./build_linux.sh --ndk 3.9 --version 13.3
+  ./build_linux.sh --version 13.3 --prefix /opt/amiga-13.3-lto --enable-amiga-lto
   ./build_linux.sh --cc gcc-12 --cxx g++-12
   ./build_linux.sh --version 15.2:amiga15.2 --link-default 15.2
 EOF
@@ -174,6 +182,11 @@ parse_args() {
         PREFIX_ROOT="${2%/}"
         shift 2
         ;;
+      --prefix)
+        [[ $# -ge 2 ]] || die "--prefix requires a value"
+        PREFIX_OVERRIDE="${2%/}"
+        shift 2
+        ;;
       --prefix-template)
         [[ $# -ge 2 ]] || die "--prefix-template requires a value"
         PREFIX_TEMPLATE="$2"
@@ -209,6 +222,10 @@ parse_args() {
         HOST_CXX="$2"
         shift 2
         ;;
+      --enable-amiga-lto)
+        ENABLE_AMIGA_LTO=1
+        shift
+        ;;
       --skip-apt)
         INSTALL_APT=0
         shift
@@ -238,6 +255,16 @@ parse_args() {
 
   if [[ ${#VERSION_SPECS[@]} -eq 0 ]]; then
     VERSION_SPECS=("13.3" "15.2" "6.5.0b")
+  fi
+
+  if [[ -n "$PREFIX_OVERRIDE" && ${#VERSION_SPECS[@]} -ne 1 ]]; then
+    die "--prefix requires exactly one --version"
+  fi
+
+  if [[ "$ENABLE_AMIGA_LTO" -eq 1 ]]; then
+    if [[ ${#VERSION_SPECS[@]} -ne 1 || "${VERSION_SPECS[0]%%:*}" != "13.3" ]]; then
+      die "--enable-amiga-lto currently requires exactly --version 13.3"
+    fi
   fi
 }
 
@@ -469,6 +496,68 @@ prepare_source() {
   )
 }
 
+build_dir_has_foreign_amiga_prefix() {
+  local build="$1"
+  local prefix="$2"
+  local file
+
+  while IFS= read -r file; do
+    if LC_ALL=C grep -E "(^|[[:space:]'])--prefix=/opt/amiga-|^(prefix|exec_prefix|libdir|tooldir|includedir)[[:space:]]*=[[:space:]]*/opt/amiga-" "$file" \
+        | grep -Fv -- "$prefix" >/dev/null 2>&1; then
+      return 0
+    fi
+  done < <(find "$build" \( -name config.log -o -name config.status -o -name Makefile \) -type f 2>/dev/null)
+
+  return 1
+}
+
+reset_variant_build_dir() {
+  local src="$1"
+  local prefix="$2"
+  local build="${src}/build-$(uname -s)-m68k-amigaos"
+  local stamp="${build}/.build_linux_variant"
+  local stamp_text
+
+  [[ "$REUSE_SOURCE" -eq 1 ]] || return
+
+  stamp_text="$(printf 'prefix=%s\nlto=%s' "$prefix" "$ENABLE_AMIGA_LTO")"
+  if [[ -f "$stamp" && "$(cat "$stamp")" == "$stamp_text" ]]; then
+    return
+  fi
+
+  if [[ -d "$build" ]]; then
+    if [[ -f "$stamp" ]] || build_dir_has_foreign_amiga_prefix "$build" "$prefix"; then
+      log "Removing generated build directory for ${prefix}"
+      safe_remove_source "$build"
+    fi
+  fi
+
+  mkdir -p "$build"
+  printf 'prefix=%s\nlto=%s\n' "$prefix" "$ENABLE_AMIGA_LTO" > "$stamp"
+}
+
+patch_libdebug_ordering() {
+  local src="$1"
+  local makefile="${src}/Makefile"
+  local deps_line
+
+  [[ -f "$makefile" ]] || return
+
+  deps_line='$(BUILD)/libdebug/Makefile: $(BUILD)/gcc/_libgcc_done $(BUILD)/libnix/_done $(PROJECTS)/libdebug/configure $(shell find 2>/dev/null $(PROJECTS)/libdebug -not \( -path $(PROJECTS)/libdebug/.git -prune \) -type f)'
+
+  if ! grep -q 'CODEX_LIBDEBUG_AFTER_LIBGCC' "$makefile"; then
+    perl -0pi -e 's@(# libdebug\n)@$1# CODEX_LIBDEBUG_AFTER_LIBGCC\n@' "$makefile"
+  fi
+
+  if ! grep -Fq '$(BUILD)/libdebug/Makefile: $(BUILD)/gcc/_libgcc_done' "$makefile"; then
+    LIBDEBUG_DEPS_LINE="$deps_line" \
+      perl -0pi -e 's@^\$\(BUILD\)/libdebug/Makefile:.*$@$ENV{LIBDEBUG_DEPS_LINE}@m' "$makefile"
+  fi
+
+  grep -Fq '$(BUILD)/libdebug/Makefile: $(BUILD)/gcc/_libgcc_done' "$makefile" \
+    || die "failed to make libdebug wait for libgcc in ${makefile}"
+}
+
 patch_gcc15_libnix_sources() {
   local src="$1"
   local cmpxf2="${src}/projects/libnix/sources/math/math/__cmpxf2.c"
@@ -478,6 +567,58 @@ patch_gcc15_libnix_sources() {
     perl -0pi -e 's~(/\* convert long double to double \*/\ndouble\n__truncxfdf2)~#if !defined(__GNUC__) || __GNUC__ < 15\n#define CODEX_GCC15_LIBNIX_TRUNCXFDF2 1\n$1~' "$cmpxf2"
     perl -0pi -e 's~(\nextern int __cmpdf2 \(double x1, double x2\);)~\n#endif /* !defined(__GNUC__) || __GNUC__ < 15 */\n$1~' "$cmpxf2"
   fi
+}
+
+apply_patch_file() {
+  local dir="$1"
+  local patch_file="$2"
+
+  [[ -d "$dir" ]] || die "patch directory does not exist: ${dir}"
+  [[ -f "$patch_file" ]] || die "missing patch file: ${patch_file}"
+
+  if (
+    cd "$dir"
+    "$PATCH_BIN" --reverse --dry-run -p1 -i "$patch_file" >/dev/null 2>&1
+  ); then
+    log "Patch already applied: ${patch_file}"
+    return
+  fi
+
+  if (
+    cd "$dir"
+    "$PATCH_BIN" --forward --dry-run -p1 -i "$patch_file" >/dev/null 2>&1
+    "$PATCH_BIN" --forward --batch -p1 -i "$patch_file"
+  ); then
+    return
+  fi
+
+  die "failed to apply patch: ${patch_file}"
+}
+
+patch_amiga_lto_sources() {
+  local src="$1"
+  local makefile="${src}/Makefile"
+  local binutils_build="${src}/build-$(uname -s)-m68k-amigaos/binutils"
+  local gcc_build="${src}/build-$(uname -s)-m68k-amigaos/gcc"
+
+  log "Patching Amiga HUNK LTO support"
+  apply_patch_file "$src/projects/binutils" "${SCRIPT_DIR}/patches/amiga-lto-binutils.patch"
+  apply_patch_file "$src/projects/gcc" "${SCRIPT_DIR}/patches/amiga-lto-gcc.patch"
+
+  if [[ -f "$makefile" ]] && ! grep -q 'CODEX_AMIGA_LTO_PLUGINS' "$makefile"; then
+    perl -0pi -e 's@ifneq \(m68k-elf,\$\(TARGET\)\)\nCONFIG_BINUTILS \+= --disable-plugins\nendif\n@CONFIG_BINUTILS += --enable-plugins # CODEX_AMIGA_LTO_PLUGINS\n@' "$makefile"
+  fi
+
+  grep -q 'CODEX_AMIGA_LTO_PLUGINS' "$makefile" \
+    || die "failed to enable binutils plugin support in ${makefile}"
+
+  if [[ -d "$binutils_build" ]]; then
+    find "$binutils_build" -name config.cache -type f -exec rm -f {} +
+  fi
+  if [[ -d "$gcc_build" ]]; then
+    find "$gcc_build" -name config.cache -type f -exec rm -f {} +
+  fi
+  rm -f "${binutils_build}/Makefile" "${binutils_build}/_done"
 }
 
 make_amiga() {
@@ -510,7 +651,11 @@ build_gcc_version() {
   [[ -n "$branch" ]] || die "empty branch in ${spec}"
   ndk="$(ndk_for_version "$version")"
 
-  prefix="$(prefix_for_version "$version")"
+  if [[ -n "$PREFIX_OVERRIDE" ]]; then
+    prefix="$PREFIX_OVERRIDE"
+  else
+    prefix="$(prefix_for_version "$version")"
+  fi
   src="${WORKDIR}/amiga-gcc-${version}"
 
   log "Building GCC ${version} (${branch}) with NDK ${ndk}"
@@ -520,7 +665,12 @@ build_gcc_version() {
   log "Building and installing GCC ${version} into ${prefix}"
   make_amiga "$src" branch branch="$branch" mod=gcc
   make_amiga "$src" update NDK="$ndk"
+  patch_libdebug_ordering "$src"
+  reset_variant_build_dir "$src" "$prefix"
   patch_gcc15_libnix_sources "$src"
+  if [[ "$ENABLE_AMIGA_LTO" -eq 1 ]]; then
+    patch_amiga_lto_sources "$src"
+  fi
   make_amiga_parallel "$src" all NDK="$ndk" PREFIX="$prefix"
 
   log "Installing SDKs for GCC ${version}"

@@ -1,0 +1,512 @@
+diff --git a/bfd/amigaos.c b/bfd/amigaos.c
+index 66732528..216cb997 100644
+--- a/bfd/amigaos.c
++++ b/bfd/amigaos.c
+@@ -567,6 +567,26 @@ amiga_make_unique_section (
+   return section;
+ }
+ 
++#define AMIGA_LTO_DEBUG_MAGIC 0x4c544f31 /* "LTO1" */
++#define AMIGA_LTO_GCCPK_UNDEF 2
++#define AMIGA_LTO_GCCPK_WEAKUNDEF 3
++
++static bool
++amiga_is_lto_section_name (const char *name)
++{
++  return name != NULL && strncmp (name, ".gnu.lto", 8) == 0;
++}
++
++static bool
++amiga_skip_loadfile_section (const char *name)
++{
++  return (name != NULL
++	  && (strcmp (name, ".stab") == 0
++	      || strcmp (name, ".stabstr") == 0
++	      || strcmp (name, ".dwarf") == 0
++	      || amiga_is_lto_section_name (name)));
++}
++
+ #if DEBUG_AMIGA
+ #define DPRINTHUNK(x) fprintf(stderr,"Processing %s hunk (0x%x)...",\
+ 	(x) == HUNK_UNIT ? "HUNK_UNIT" :\
+@@ -1274,9 +1294,10 @@ amiga_handle_cdb_hunk (
+     case HUNK_DEBUG:
+       /* handle .stab and .stabs as real sections. */
+       if (current_name && (0 == strcmp (current_name, ".stab") || 0 == strcmp (current_name, ".stabstr")
+-	  || 0 == strncmp (current_name, ".debug_", 7) || 0 == strcmp (current_name, ".dwarf")))
++	  || 0 == strncmp (current_name, ".debug_", 7) || 0 == strcmp (current_name, ".dwarf")
++	  || amiga_is_lto_section_name (current_name)))
+ 	{
+-	  secflags = SEC_HAS_CONTENTS;
++	  secflags = SEC_DEBUGGING | SEC_HAS_CONTENTS;
+ 	  goto do_section;
+ 	}
+ 
+@@ -1762,8 +1783,9 @@ amiga_write_object_contents (
+ 	  if ((amiga_base_relative || p->rawsize != 0 || p->size != 0)
+ 	      && !(amiga_base_relative && !strcmp (p->name, ".bss")))
+ 	    {
+-	      /* don't count debug sections. */
+-	      if (strcmp (p->name, ".stab") && strcmp(p->name, ".dwarf"))
++	      if (amiga_skip_loadfile_section (p->name))
++		remove_section_index (p, index_map);
++	      else
+ 		n[2]++;
+ 	    }
+ 	else
+@@ -1801,8 +1823,7 @@ amiga_write_object_contents (
+ 	  if (index_map[p->index] < 0)
+ 	    continue;
+ 
+-	  /* don't add debug sections. */
+-	  if (!strcmp (p->name, ".stab") || !strcmp (p->name, ".stabstr") || !strcmp(p->name, ".dwarf"))
++	  if (amiga_skip_loadfile_section (p->name))
+ 	    continue;
+ 
+ 	  if (datadata_relocs && !strcmp(p->name,".text"))
+@@ -1851,7 +1872,8 @@ amiga_write_object_contents (
+ 	{
+ 	  asymbol *sym_p = abfd->outsymbols[i];
+ 	  sec_ptr osection = sym_p->section;
+-	  if (!osection || !bfd_is_com_section(osection->output_section))
++	  if (!osection || !osection->output_section
++	      || !bfd_is_com_section(osection->output_section))
+ 	    continue;
+ 
+ 	  for (p = abfd->sections; p != NULL; p = p->next)
+@@ -2180,6 +2190,7 @@ amiga_write_section_contents (
+   asymbol *sym_p;
+   arelent *r;
+   unsigned long zero=0,disksize,pad,n[2],k,l,s;
++  unsigned long lto_debug_header_size = 0;
+   long *reloc_counts,reloc_count=0;
+   unsigned char *values;
+   int i,j,x,type;
+@@ -2229,7 +2252,12 @@ amiga_write_section_contents (
+   /* Get real size in n[1], this may be shorter than the size in the header */
+   if (amiga_per_section(section)->disk_size == 0)
+     amiga_per_section(section)->disk_size = section->rawsize;
+-  disksize = LONGSIZE (amiga_per_section(section)->disk_size) + datadata_relocs;
++  if (!AMIGA_DATA(abfd)->IsLoadFile
++      && amiga_is_lto_section_name (section->name)
++      && (section->flags & SEC_DEBUGGING) != 0)
++    lto_debug_header_size = 8;
++  disksize = LONGSIZE (amiga_per_section(section)->disk_size
++		       + lto_debug_header_size) + datadata_relocs;
+   n[1] = disksize;
+ 
+   /* in a load file, we put section attributes only in the header */
+@@ -2355,8 +2370,20 @@ amiga_write_section_contents (
+ 
+   /* We applied all the relocs, as far as possible to obtain 0 addend fields */
+   /* Write the section contents */
+-  if (amiga_per_section(section)->disk_size != 0)
++  if (amiga_per_section(section)->disk_size != 0
++      || lto_debug_header_size != 0)
+     {
++      if (lto_debug_header_size != 0)
++	{
++	  unsigned char header[8];
++
++	  bfd_putb32 (AMIGA_LTO_DEBUG_MAGIC, header);
++	  bfd_putb32 (amiga_per_section(section)->disk_size, header + 4);
++	  if (bfd_bwrite ((void *)header, sizeof(header), abfd)
++	      != sizeof(header))
++	    return false;
++	}
++
+       if (bfd_bwrite ((void *)section->contents,
+       amiga_per_section(section)->disk_size,
+ 		      abfd) !=
+@@ -2364,7 +2391,8 @@ amiga_write_section_contents (
+ 	return false;
+ 
+       /* pad the section on disk if necessary (to a long boundary) */
+-      pad = (4 - (amiga_per_section(section)->disk_size & 3)) & 3;
++      pad = (4 - ((amiga_per_section(section)->disk_size
++		   + lto_debug_header_size) & 3)) & 3;
+       if (pad && (bfd_bwrite ((void *)&zero, pad, abfd) != pad))
+ 	return false;
+     }
+@@ -2530,6 +2560,110 @@ amiga_write_section_contents (
+    In the case, we were linking base relative, the symbols of the .bss
+    hunk have been converted already to belong to the .data hunk */
+ 
++static bool
++amiga_output_symbol_exists (bfd *abfd, const char *name)
++{
++  unsigned int i;
++
++  if (name == NULL)
++    return true;
++
++  for (i = 0; i < bfd_get_symcount (abfd); i++)
++    {
++      asymbol *sym = abfd->outsymbols[i];
++
++      if (sym != NULL && sym->name != NULL && strcmp (sym->name, name) == 0)
++	return true;
++    }
++
++  return false;
++}
++
++static bool
++amiga_write_lto_undefined_symbols (bfd *abfd,
++				   unsigned int *symbol_count,
++				   unsigned long symbol_header)
++{
++  asection *sec;
++
++  for (sec = abfd->sections; sec != NULL; sec = sec->next)
++    {
++      bfd_byte *p;
++      bfd_byte *end;
++      bfd_size_type size;
++
++      if (sec->name == NULL || strncmp (sec->name, ".gnu.lto_.symtab", 16) != 0)
++	continue;
++
++      if (sec->contents == NULL)
++	continue;
++
++      size = bfd_section_size (sec);
++      p = sec->contents;
++      end = sec->contents + size;
++      if (size >= 8 && bfd_getb32 (sec->contents) == AMIGA_LTO_DEBUG_MAGIC)
++	{
++	  bfd_size_type payload_size = bfd_getb32 (sec->contents + 4);
++
++	  if (payload_size > size - 8)
++	    continue;
++	  p = sec->contents + 8;
++	  end = p + payload_size;
++	}
++
++      while (p < end)
++	{
++	  bfd_byte *name_end;
++	  const char *symname = (const char *) p;
++	  unsigned int kind;
++	  unsigned long n[1];
++	  unsigned long type;
++
++	  name_end = memchr (p, '\0', end - p);
++	  if (name_end == NULL)
++	    break;
++	  p = name_end + 1;
++
++	  name_end = memchr (p, '\0', end - p);
++	  if (name_end == NULL)
++	    break;
++	  p = name_end + 1;
++
++	  if ((size_t) (end - p) < 14)
++	    break;
++
++	  kind = p[0];
++	  p += 2 + 8 + 4;
++
++	  if (kind != AMIGA_LTO_GCCPK_UNDEF
++	      && kind != AMIGA_LTO_GCCPK_WEAKUNDEF)
++	    continue;
++
++	  if (amiga_output_symbol_exists (abfd, symname))
++	    continue;
++
++	  if ((*symbol_count)++ == 0)
++	    {
++	      if (!write_longs (&symbol_header, 1, abfd))
++		return false;
++	    }
++
++	  type = EXT_ABSREF32;
++	  if (kind == AMIGA_LTO_GCCPK_WEAKUNDEF)
++	    type |= 0x40;
++
++	  if (!write_name (abfd, symname, type << 24))
++	    return false;
++
++	  n[0] = 0;
++	  if (!write_longs (n, 1, abfd))
++	    return false;
++	}
++    }
++
++  return true;
++}
++
+ static bool amiga_write_symbols (
+   bfd *abfd, sec_ptr section)
+ {
+@@ -2765,6 +2793,9 @@ static bool amiga_write_symbols (
+       if ((sym_p->flags & BSF_LOCAL) && symbol_header == HUNK_SYMBOL)
+ 	continue;
+ 
++      if (!osection->output_section)
++	continue;
++
+       /* Now, if osection==section, write it out */
+       if (osection->output_section==section)
+ 	{
+@@ -2810,6 +2947,13 @@ static bool amiga_write_symbols (
+ 	}
+     }/* Of for */
+ 
++  if (symbol_header == HUNK_EXT && section->index == 0)
++    {
++      if (!amiga_write_lto_undefined_symbols (abfd, &symbol_count,
++					      symbol_header))
++	return false;
++    }
++
+   DPRINT(10,("Did traversing\n"));
+   if (symbol_count) /* terminate HUNK_EXT, HUNK_SYMBOL */
+     {
+diff --git a/bfd/linker.c b/bfd/linker.c
+index d7033944..41b82b21 100644
+--- a/bfd/linker.c
++++ b/bfd/linker.c
+@@ -24,6 +24,9 @@
+ #include "libbfd.h"
+ #include "bfdlink.h"
+ #include "genlink.h"
++#if BFD_SUPPORTS_PLUGINS
++#include "plugin.h"
++#endif
+ 
+ /*
+ SECTION
+@@ -1037,15 +1040,24 @@ generic_link_check_archive_element (bfd *abfd,
+ 				    const char *name ATTRIBUTE_UNUSED,
+ 				    bool *pneeded)
+ {
++  bfd *symbfd = abfd;
+   asymbol **pp, **ppend;
+ 
+   *pneeded = false;
+ 
+-  if (!bfd_generic_link_read_symbols (abfd))
++#if BFD_SUPPORTS_PLUGINS
++  if (info->lto_plugin_active
++      && (abfd->plugin_format == bfd_plugin_yes
++	  || (abfd->plugin_format == bfd_plugin_unknown
++	      && bfd_link_plugin_object_p (abfd))))
++    symbfd = abfd->plugin_dummy_bfd;
++#endif
++
++  if (!bfd_generic_link_read_symbols (symbfd))
+     return false;
+ 
+-  pp = _bfd_generic_link_get_symbols (abfd);
+-  ppend = pp + _bfd_generic_link_get_symcount (abfd);
++  pp = _bfd_generic_link_get_symbols (symbfd);
++  ppend = pp + _bfd_generic_link_get_symcount (symbfd);
+   for (; pp < ppend; pp++)
+     {
+       asymbol *p;
+@@ -1431,6 +1443,7 @@ _bfd_generic_link_add_one_symbol (struct bfd_link_info *info,
+     {
+       row = COMMON_ROW;
+       if (!bfd_link_relocatable (info)
++	  && !info->lto_plugin_active
+ 	  && name != NULL
+ 	  && name[0] == '_'
+ 	  && name[1] == '_'
+diff --git a/ld/plugin.c b/ld/plugin.c
+index fe203104..c42c509b 100644
+--- a/ld/plugin.c
++++ b/ld/plugin.c
+@@ -106,6 +106,8 @@ typedef struct plugin_input_file
+   bfd *abfd;
+   /* The original input BFD.  Non-NULL if it is an archive member.  */
+   bfd *ibfd;
++  struct ld_plugin_symbol *amiga_syms;
++  int amiga_nsyms;
+   view_buffer_t view_buffer;
+   char *name;
+   int fd;
+@@ -354,6 +356,47 @@ is_ir_dummy_bfd (const bfd *abfd)
+   return abfd != NULL && (abfd->flags & BFD_PLUGIN) != 0;
+ }
+ 
++static const char *
++amiga_lto_bfd_symbol_name (bfd *abfd, const char *name)
++{
++  char leading = bfd_get_symbol_leading_char (abfd);
++  char prefix[2];
++
++  if (leading == '\0' || name[0] == leading)
++    return name;
++
++  prefix[0] = leading;
++  prefix[1] = '\0';
++  return concat (prefix, name, (const char *) NULL);
++}
++
++static void
++amiga_lto_save_symbols (plugin_input_file_t *input, int nsyms,
++			const struct ld_plugin_symbol *syms)
++{
++  struct ld_plugin_symbol *copy;
++  int n;
++
++  /* The Amiga HUNK backend does not round-trip the synthetic plugin
++     symbols through bfd_make_readable, but the generic archive scanner
++     needs them after the file has been claimed.  */
++  copy = xmalloc (nsyms * sizeof *copy);
++  for (n = 0; n < nsyms; n++)
++    {
++      copy[n] = syms[n];
++      copy[n].name = syms[n].name != NULL ? xstrdup (syms[n].name) : NULL;
++      copy[n].version = (syms[n].version != NULL
++			 ? xstrdup (syms[n].version)
++			 : NULL);
++      copy[n].comdat_key = (syms[n].comdat_key != NULL
++			    ? xstrdup (syms[n].comdat_key)
++			    : NULL);
++    }
++
++  input->amiga_syms = copy;
++  input->amiga_nsyms = nsyms;
++}
++
+ /* Helpers to convert between BFD and GOLD symbol formats.  */
+ static enum ld_plugin_status
+ asymbol_from_plugin_symbol (bfd *abfd, asymbol *asym,
+@@ -361,11 +404,12 @@ asymbol_from_plugin_symbol (bfd *abfd, asymbol *asym,
+ {
+   flagword flags = BSF_NO_FLAGS;
+   struct bfd_section *section;
++  const char *name = amiga_lto_bfd_symbol_name (abfd, ldsym->name);
+ 
+   asym->the_bfd = abfd;
+   asym->name = (ldsym->version
+-		? concat (ldsym->name, "@", ldsym->version, (const char *) NULL)
+-		: ldsym->name);
++		? concat (name, "@", ldsym->version, (const char *) NULL)
++		: name);
+   asym->value = 0;
+   switch (ldsym->def)
+     {
+@@ -394,7 +438,20 @@ asymbol_from_plugin_symbol (bfd *abfd, asymbol *asym,
+ 	    }
+ 	}
+       else
+-	section = bfd_get_section_by_name (abfd, ".text");
++	{
++	  section = bfd_get_section_by_name (abfd, ".text");
++	  if (section == NULL)
++	    {
++	      flagword sflags;
++
++	      sflags = (SEC_CODE | SEC_HAS_CONTENTS | SEC_READONLY
++			| SEC_ALLOC | SEC_LOAD | SEC_KEEP | SEC_EXCLUDE);
++	      section = bfd_make_section_anyway_with_flags (abfd, ".text",
++							    sflags);
++	      if (section == NULL)
++		return LDPS_ERR;
++	    }
++	}
+       break;
+ 
+     case LDPK_WEAKUNDEF:
+@@ -456,6 +513,35 @@ asymbol_from_plugin_symbol (bfd *abfd, asymbol *asym,
+   return LDPS_OK;
+ }
+ 
++static enum ld_plugin_status
++amiga_lto_rebuild_symbols (plugin_input_file_t *input)
++{
++  asymbol **symptrs;
++  bfd *abfd = input->abfd;
++  int n;
++
++  if (input->amiga_syms == NULL)
++    return LDPS_OK;
++
++  symptrs = xmalloc (input->amiga_nsyms * sizeof *symptrs);
++  for (n = 0; n < input->amiga_nsyms; n++)
++    {
++      enum ld_plugin_status rv;
++      asymbol *bfdsym;
++
++      bfdsym = bfd_make_empty_symbol (abfd);
++      symptrs[n] = bfdsym;
++      rv = asymbol_from_plugin_symbol (abfd, bfdsym,
++				       input->amiga_syms + n);
++      if (rv != LDPS_OK)
++	return rv;
++    }
++
++  abfd->outsymbols = symptrs;
++  abfd->symcount = input->amiga_nsyms;
++  return LDPS_OK;
++}
++
+ /* Register a claim-file handler.  */
+ static enum ld_plugin_status
+ register_claim_file (ld_plugin_claim_file_handler handler)
+@@ -493,6 +579,8 @@ add_symbols (void *handle, int nsyms, const struct ld_plugin_symbol *syms)
+   int n;
+ 
+   ASSERT (called_plugin);
++  if (bfd_get_flavour (abfd) == bfd_target_amiga_flavour)
++    amiga_lto_save_symbols (input, nsyms, syms);
+   symptrs = xmalloc (nsyms * sizeof *symptrs);
+   for (n = 0; n < nsyms; n++)
+     {
+@@ -752,8 +840,10 @@ get_symbols (const void *handle, int nsyms, struct ld_plugin_symbol *syms,
+       struct bfd_link_hash_entry *blhe;
+       asection *owner_sec;
+       int res;
++      const char *name = amiga_lto_bfd_symbol_name ((bfd *) abfd,
++						    syms[n].name);
+       struct bfd_link_hash_entry *h
+-	= bfd_link_hash_lookup (link_info.hash, syms[n].name,
++	= bfd_link_hash_lookup (link_info.hash, name,
+ 				false, false, true);
+       enum { wrap_none, wrapper, wrapped } wrap_status = wrap_none;
+ 
+@@ -772,7 +789,7 @@ get_symbols (const void *handle, int nsyms, struct ld_plugin_symbol *syms,
+       else
+ 	{
+ 	  blhe = bfd_wrapped_link_hash_lookup (link_info.output_bfd,
+-					       &link_info, syms[n].name,
++					       &link_info, name,
+ 					       false, false, true);
+ 	  /* Check if a symbol is a wrapped symbol.  */
+ 	  if (blhe && blhe != h)
+@@ -1226,6 +1316,8 @@ plugin_object_p (bfd *ibfd)
+   file.handle = input;
+   input->abfd = abfd;
+   input->ibfd = ibfd->my_archive != NULL ? ibfd : NULL;
++  input->amiga_syms = NULL;
++  input->amiga_nsyms = 0;
+   input->view_buffer.addr = NULL;
+   input->view_buffer.filesize = 0;
+   input->view_buffer.offset = 0;
+@@ -1260,6 +1352,8 @@ plugin_object_p (bfd *ibfd)
+       ibfd->plugin_format = bfd_plugin_yes;
+       ibfd->plugin_dummy_bfd = abfd;
+       bfd_make_readable (abfd);
++      if (amiga_lto_rebuild_symbols (input) != LDPS_OK)
++	einfo (_("%F%P: %pB: failed to rebuild plugin symbols\n"), ibfd);
+       abfd->no_export = ibfd->no_export;
+       return plugin_cleanup;
+     }
+diff --git a/gas/config/obj-amigahunk.c b/gas/config/obj-amigahunk.c
+index dde0c87e..bdd467c4 100644
+--- a/gas/config/obj-amigahunk.c
++++ b/gas/config/obj-amigahunk.c
+@@ -108,8 +108,8 @@ static void s_custom_section(char const * secname)
+   if (!seg_info (seg)->hadone)
+     {
+       int flags;
+-      if (0 == strncmp(secname, ".gnu.lto", 8))
+-	flags = SEC_DEBUGGING;
++      if (0 == strncmp(secname, ".gnu.lto", 8))
++	flags = SEC_DEBUGGING | SEC_HAS_CONTENTS;
+       else if (strncmp(secname, ".gnu.", 5) == 0 || strncmp(secname, ".text", 5) == 0 || strncmp(secname, ".rodata", 7) == 0)
+ 	flags = SEC_ALLOC | SEC_LOAD | SEC_RELOC | SEC_CODE;
+       else if (strncmp(secname, ".bss", 4) == 0)
