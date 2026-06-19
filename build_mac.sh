@@ -15,6 +15,7 @@ REUSE_SOURCE=0
 DEFAULT_SYMLINK_VERSION=""
 PREFIX_OVERRIDE=""
 ENABLE_AMIGA_LTO=0
+ENABLE_BEBBO_AMIGA6_PATCHES=0
 HOST_CC="${CC:-}"
 HOST_CXX="${CXX:-}"
 VERSION_SPECS=()
@@ -89,11 +90,14 @@ Options:
   --cxx PATH_OR_NAME         Host C++ compiler (default: prefer g++-15)
   --enable-amiga-lto         Apply experimental Amiga HUNK LTO patches and
                              build binutils with linker plugin support
+  --enable-bebbo-amiga6-patches
+                             Apply selected Bebbo amiga6 GCC backend and
+                             optimizer patches on top of AmigaPorts/gcc
   --skip-brew                Do not install Homebrew formulae
   --skip-amitools            Do not create a local amitools Python venv
   --reuse-source             Reuse existing per-version source trees
                              Generated build directories are reused only when
-                             they match the requested prefix and LTO mode
+                             they match the requested prefix and patch modes
   --link-default VERSION     Create/update /opt/amiga -> /opt/amiga-VERSION
   -h, --help                 Show this help
 
@@ -101,6 +105,7 @@ Examples:
   ./build_mac.sh
   ./build_mac.sh --ndk 3.9 --version 13.3
   ./build_mac.sh --version 13.3 --prefix /opt/amiga-13.3-lto --enable-amiga-lto
+  ./build_mac.sh --version 6.5.0b --enable-bebbo-amiga6-patches
   ./build_mac.sh --cc gcc-12 --cxx g++-12
   ./build_mac.sh --version 15.2:amiga15.2 --link-default 15.2
 EOF
@@ -199,6 +204,10 @@ parse_args() {
         ENABLE_AMIGA_LTO=1
         shift
         ;;
+      --enable-bebbo-amiga6-patches)
+        ENABLE_BEBBO_AMIGA6_PATCHES=1
+        shift
+        ;;
       --skip-brew)
         INSTALL_BREW=0
         shift
@@ -238,6 +247,10 @@ parse_args() {
     if [[ ${#VERSION_SPECS[@]} -ne 1 || "${VERSION_SPECS[0]%%:*}" != "13.3" ]]; then
       die "--enable-amiga-lto currently requires exactly --version 13.3"
     fi
+  fi
+
+  if [[ "$ENABLE_AMIGA_LTO" -eq 1 && "$ENABLE_BEBBO_AMIGA6_PATCHES" -eq 1 ]]; then
+    die "--enable-amiga-lto and --enable-bebbo-amiga6-patches cannot be combined"
   fi
 }
 
@@ -551,7 +564,7 @@ reset_variant_build_dir() {
 
   [[ "$REUSE_SOURCE" -eq 1 ]] || return
 
-  stamp_text="$(printf 'prefix=%s\nlto=%s' "$prefix" "$ENABLE_AMIGA_LTO")"
+  stamp_text="$(printf 'prefix=%s\nlto=%s\nbebbo_amiga6=%s' "$prefix" "$ENABLE_AMIGA_LTO" "$ENABLE_BEBBO_AMIGA6_PATCHES")"
   if [[ -f "$stamp" && "$(cat "$stamp")" == "$stamp_text" ]]; then
     return
   fi
@@ -564,7 +577,7 @@ reset_variant_build_dir() {
   fi
 
   mkdir -p "$build"
-  printf 'prefix=%s\nlto=%s\n' "$prefix" "$ENABLE_AMIGA_LTO" > "$stamp"
+  printf 'prefix=%s\nlto=%s\nbebbo_amiga6=%s\n' "$prefix" "$ENABLE_AMIGA_LTO" "$ENABLE_BEBBO_AMIGA6_PATCHES" > "$stamp"
 }
 
 patch_libdebug_ordering() {
@@ -636,6 +649,29 @@ apply_patch_file() {
   die "failed to apply patch: ${patch_file}"
 }
 
+apply_patch_dir() {
+  local dir="$1"
+  local patch_dir="$2"
+  local patch_file
+  local marker="${dir}/.codex-$(basename "$patch_dir")-patches-applied"
+  local found=0
+
+  [[ -d "$patch_dir" ]] || die "patch directory does not exist: ${patch_dir}"
+
+  if [[ -f "$marker" ]]; then
+    log "Patch series already applied: ${patch_dir}"
+    return
+  fi
+
+  while IFS= read -r patch_file; do
+    found=1
+    apply_patch_file "$dir" "$patch_file"
+  done < <(find "$patch_dir" -maxdepth 1 -name '*.patch' -type f | sort)
+
+  [[ "$found" -eq 1 ]] || die "no patch files found in ${patch_dir}"
+  printf 'applied=%s\n' "$(basename "$patch_dir")" > "$marker"
+}
+
 patch_amiga_lto_sources() {
   local src="$1"
   local makefile="${src}/Makefile"
@@ -660,6 +696,13 @@ patch_amiga_lto_sources() {
     find "$gcc_build" -name config.cache -type f -exec rm -f {} +
   fi
   rm -f "${binutils_build}/Makefile" "${binutils_build}/_done"
+}
+
+patch_bebbo_amiga6_sources() {
+  local src="$1"
+
+  log "Patching selected Bebbo amiga6 GCC changes"
+  apply_patch_dir "$src/projects/gcc" "${SCRIPT_DIR}/patches/bebbo-amiga6"
 }
 
 make_amiga() {
@@ -710,6 +753,9 @@ build_gcc_version() {
   reset_variant_build_dir "$src" "$prefix"
   patch_macos_gcc_sources "$src"
   patch_gcc15_libnix_sources "$src"
+  if [[ "$ENABLE_BEBBO_AMIGA6_PATCHES" -eq 1 && "$branch" == "amiga6" ]]; then
+    patch_bebbo_amiga6_sources "$src"
+  fi
   if [[ "$ENABLE_AMIGA_LTO" -eq 1 ]]; then
     patch_amiga_lto_sources "$src"
   fi

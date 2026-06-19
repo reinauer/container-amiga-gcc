@@ -1,0 +1,50 @@
+From 603481333bd5185f172ad3c7afa5201593d00d72 Mon Sep 17 00:00:00 2001
+From: bebbo <bebbo@bejy.net>
+Date: Wed, 13 May 2026 21:09:40 +0200
+Subject: [PATCH 12/15] different optimizer settings
+
+---
+ gcc/opts.c | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/gcc/opts.c b/gcc/opts.c
+index ba1c334ae52..ed4e1a4d4e7 100644
+--- a/gcc/opts.c
++++ b/gcc/opts.c
+@@ -476,6 +476,7 @@ static const struct default_options default_options_table[] =
+     { OPT_LEVELS_1_PLUS_NOT_DEBUG, OPT_fssa_phiopt, NULL, 1 },
+     { OPT_LEVELS_1_PLUS, OPT_ftree_builtin_call_dce, NULL, 1 },
+ 
++    { OPT_LEVELS_SIZE, OPT_freorder_blocks_and_partition, NULL, 1 },
+ 
+     /* -O2 optimizations.  */
+     { OPT_LEVELS_2_PLUS, OPT_finline_small_functions, NULL, 1 },
+@@ -504,6 +505,8 @@ static const struct default_options default_options_table[] =
+       REORDER_BLOCKS_ALGORITHM_STC
+ //#endif
+     },
++
++    { OPT_LEVELS_2_PLUS, OPT_fprune_stack_vars, NULL, 1 },
+     { OPT_LEVELS_2_PLUS, OPT_freorder_functions, NULL, 1 },
+     { OPT_LEVELS_2_PLUS, OPT_ftree_vrp, NULL, 1 },
+     { OPT_LEVELS_2_PLUS, OPT_ftree_pre, NULL, 1 },
+@@ -519,7 +522,8 @@ static const struct default_options default_options_table[] =
+     { OPT_LEVELS_2_PLUS, OPT_falign_functions, NULL, 1 },
+     { OPT_LEVELS_2_PLUS, OPT_ftree_tail_merge, NULL, 1 },
+     { OPT_LEVELS_2_PLUS, OPT_fvect_cost_model_, NULL, VECT_COST_MODEL_CHEAP },
+-    { OPT_LEVELS_2_PLUS_SPEED_ONLY, OPT_foptimize_strlen, NULL, 1 },
++//    { OPT_LEVELS_2_PLUS_SPEED_ONLY, OPT_foptimize_strlen, NULL, 1 },
++    { OPT_LEVELS_2_PLUS, OPT_foptimize_strlen, NULL, 1 },
+     { OPT_LEVELS_2_PLUS, OPT_fhoist_adjacent_loads, NULL, 1 },
+     { OPT_LEVELS_2_PLUS, OPT_fipa_icf, NULL, 1 },
+     { OPT_LEVELS_2_PLUS, OPT_fisolate_erroneous_paths_dereference, NULL, 1 },
+@@ -527,7 +531,8 @@ static const struct default_options default_options_table[] =
+     { OPT_LEVELS_2_PLUS, OPT_flra_remat, NULL, 1 },
+ 
+     /* -O3 optimizations.  */
+-    { OPT_LEVELS_3_PLUS, OPT_ftree_loop_distribute_patterns, NULL, 1 },
++    { OPT_LEVELS_3_PLUS, OPT_funroll_loops, NULL, 1 },
++    { OPT_LEVELS_2_PLUS, OPT_ftree_loop_distribute_patterns, NULL, 1 },
+     { OPT_LEVELS_3_PLUS, OPT_fpredictive_commoning, NULL, 1 },
+     { OPT_LEVELS_3_PLUS, OPT_fsplit_paths, NULL, 1 },
+     /* Inlining of functions is ALWAYS a good idea with -O3

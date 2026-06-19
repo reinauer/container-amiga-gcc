@@ -1,0 +1,235 @@
+From 528a22e5c24c6d79a3957d9d55c76f68142be3b6 Mon Sep 17 00:00:00 2001
+From: bebbo <bebbo@bejy.net>
+Date: Mon, 1 Jun 2026 07:59:55 +0200
+Subject: [PATCH 14/15] undo m68k_emit_setmemsi change
+
+---
+ gcc/config/m68k/m68k.c | 193 +++++++++++++++--------------------------
+ 1 file changed, 71 insertions(+), 122 deletions(-)
+
+diff --git a/gcc/config/m68k/m68k.c b/gcc/config/m68k/m68k.c
+index c12700f8449..9f03889cf1b 100644
+--- a/gcc/config/m68k/m68k.c
++++ b/gcc/config/m68k/m68k.c
+@@ -7646,150 +7646,99 @@ m68k_use_by_pieces_infrastructure_p (unsigned HOST_WIDE_INT size,
+ }
+ 
+ int
+-m68k_emit_setmemsi (rtx blkdest, rtx val, rtx length, rtx alignment)
+-{
+-  int align  = INTVAL (alignment);
+-  int total  = INTVAL (length);   /* ursprüngliche Länge in Bytes */
+-  int size   = total;             /* verbleibende Bytes */
+-  int n      = optimize_size ? 4 : 16;
+-  int value  = INTVAL (val) & 0xff;
+-  rtx regdst0 = XEXP (blkdest, 0);
+-  rtx regdst, src, dst;
+-  int rest;
+-
+-  /* Füllwert vorbereiten.  */
++m68k_emit_setmemsi(rtx blkdest, rtx val, rtx length, rtx alignment)
++{
++  int align = INTVAL(alignment);
++  int size = INTVAL(length);
++  int n = optimize_size ? 4 : 16;
++  rtx regdst = XEXP(blkdest, 0);
++  rtx src, dst;
++  int rest = 0;
++
++  int value = INTVAL(val) & 0xff;
+   if (value != 0)
+     {
+-      src = gen_reg_rtx (SImode);
+-      emit_move_insn (src, GEN_INT (value * 0x1010101));
++      if (align == 1 && TUNE_68000_10)
++        {
++	  src = gen_reg_rtx(QImode);
++	  emit_move_insn (src, GEN_INT((signed char )value));
++        }
++      else
++	{
++	  src = gen_reg_rtx(SImode);
++	  emit_move_insn(src, GEN_INT(value * 0x1010101));
++	}
+     }
+   else
+     src = val;
+ 
+-  /* Zieladresse in Register holen, das wir überall verwenden.  */
+-  regdst = force_reg (SImode, regdst0);
+-  rtx regdst_orig = NULL;
+-  /* Laufzeit-Alignment auf gerade Adresse, falls nur Byte-aligned.  */
+-  if (align == 1 && TUNE_68000_10)
+-    {
+-      regdst_orig = gen_reg_rtx (SImode);
+-      emit_move_insn (regdst_orig, regdst);
+-
+-      rtx tmp = gen_reg_rtx (SImode);
+-      rtx aligned_label = gen_label_rtx ();
+-
+-      /* tmp = regdst & 1 */
+-      emit_insn (gen_andsi3 (tmp, regdst, GEN_INT (1)));
+-      /* tmp == 0 -> Adresse gerade -> kein führendes Byte */
+-      emit_cmp_and_jump_insns (tmp, const0_rtx, EQ, NULL_RTX,
+-                               SImode, 1, aligned_label);
++  /* SBF: allocate tmp reg.
++   * auto-inc-dec may benefit - maybe not.
++   */
++  dst = gen_reg_rtx(SImode);
++  rtx_insn * dinsn = emit_move_insn(dst, regdst);
++  add_reg_note (dinsn, REG_INC, dst);
+ 
+-      /* Adresse ungerade -> 1 Byte schreiben, size--.  */
+-      {
+-        rtx byte_dst =
+-          gen_rtx_MEM (QImode, gen_rtx_POST_INC (SImode, regdst));
+-        rtx_insn *insn =
+-          emit_move_insn (byte_dst, GEN_INT (value & 0xff));
+-        add_reg_note (insn, REG_INC, regdst);
+-        size -= 1;
+-      }
++  regdst = dst;
+ 
+-      emit_label (aligned_label);
++  /* move bytes. */
++  if (align == 1 && TUNE_68000_10)
++    {
++      dst = gen_rtx_MEM(QImode, gen_rtx_POST_INC(SImode, regdst));
++    }
++  else
++    {
++      rest = size % 4;
++      size /= 4;
++      dst = gen_rtx_MEM(SImode, gen_rtx_POST_INC(SImode, regdst));
+     }
+ 
+-  /* Nach dem Alignment kann nichts mehr übrig sein.  */
+-  if (size <= 0)
+-    goto maybe_trailing_byte;
+-
+-  /* Jetzt ist regdst gerade. Größe in Longs + Rest zerlegen.  */
+-  rest = size % 4;   /* 0..3 Bytes Rest */
+-  size /= 4;         /* Anzahl Longwords */
+-
+-  dst = gen_rtx_MEM (SImode, gen_rtx_POST_INC (SImode, regdst));
+-
+-  /* Schleifenaufteilung.  */
+-  {
+-    int nloops = size / n - 1;
+-    if (nloops > 160)
+-      return false;
+-
+-    int single = size % n;
+-    if (nloops == 0)
+-      single += n;
+-    else if (nloops > 0)
+-      {
+-        rtx counter = gen_reg_rtx (nloops < 0x10000 ? HImode : SImode);
+-        rtx looplabel = gen_label_rtx ();
+-        int k;
+-
+-        emit_move_insn (counter,
+-                        GEN_INT (nloops < 0x10000
+-                                 ? (short) nloops : nloops));
+-        emit_label (looplabel);
++  int nloops = size / n - 1;
+ 
+-        k = n;
+-        while (k-- > 0)
+-          {
+-            rtx_insn *insn = emit_move_insn (dst, src);
+-            add_reg_note (insn, REG_INC, regdst);
+-          }
++  if (nloops > 160)
++    return false;
+ 
+-        emit_jump_insn (nloops < 0x10000
+-                        ? gen_dbne_hi (counter, looplabel)
+-                        : gen_dbne_si (counter, looplabel));
+-      }
++  int single = size % n;
+ 
+-    while (single-- > 0)
+-      {
+-        rtx_insn *insn = emit_move_insn (dst, src);
+-        add_reg_note (insn, REG_INC, regdst);
+-      }
+-  }
++  if (nloops == 0)
++    single += n;
++  else if (nloops > 0)
++    {
++      rtx counter = gen_reg_rtx (nloops < 0x10000 ? HImode : SImode);
++      rtx looplabel = gen_label_rtx ();
++      emit_move_insn (counter,
++		      GEN_INT(nloops < 0x10000 ? (short)nloops : nloops));
++      emit_label (looplabel);
++      while (n-- > 0)
++	{
++	  rtx_insn *insn = emit_move_insn (dst, src);
++	  add_reg_note (insn, REG_INC, regdst);
++	}
++      emit_jump_insn (
++	  nloops < 0x10000 ?
++	      gen_dbne_hi (counter, looplabel) :
++	      gen_dbne_si (counter, looplabel));
++    }
+ 
+-  /* Rest: Wort + Byte.  */
+-  if (rest & 2)
++  while (single-- > 0)
+     {
+-      dst = gen_rtx_MEM (HImode, gen_rtx_POST_INC (SImode, regdst));
+-      rtx_insn *insn =
+-        emit_move_insn (dst,
+-                        GEN_INT (value + (signed char) value * 0x100));
++      rtx_insn *insn = emit_move_insn (dst, src);
+       add_reg_note (insn, REG_INC, regdst);
+     }
+ 
+-  if (rest & 1)
++  // move trailing data
++  if (rest & 2)
+     {
+-      dst = gen_rtx_MEM (QImode, gen_rtx_POST_INC (SImode, regdst));
+-      rtx_insn *insn =
+-        emit_move_insn (dst, GEN_INT ((signed char) value));
++      dst = gen_rtx_MEM (HImode, gen_rtx_POST_INC(SImode, regdst));
++      rtx_insn *insn = emit_move_insn (dst,
++				       GEN_INT(value + (signed char )value * 0x100));
+       add_reg_note (insn, REG_INC, regdst);
+     }
+-
+-  maybe_trailing_byte:
+-  if (align == 1 && TUNE_68000_10)
++  if (rest & 1)
+     {
+-      rtx tmp = gen_reg_rtx (SImode);
+-      rtx no_extra = gen_label_rtx ();
+-
+-      emit_insn (gen_xorsi3 (tmp, regdst, regdst_orig));
+-      emit_insn (gen_andsi3 (tmp, tmp, GEN_INT (1)));
+-
+-      /* trailing Byte nötig wenn:
+-	   total ungerade && kein führendes Byte (tmp==0)
+-	   total gerade   && führendes Byte      (tmp==1)
+-	 -> in beiden Fällen: tmp != (total & 1)
+-	 -> skip wenn tmp == (total & 1)           */
+-      emit_cmp_and_jump_insns (tmp, GEN_INT (total & 1), EQ, NULL_RTX,
+-			       SImode, 1, no_extra);
+-
+-      {
+-	rtx dst2 = gen_rtx_MEM (QImode,
+-		     gen_rtx_POST_INC (SImode, regdst));
+-	rtx_insn *insn2 =
+-	  emit_move_insn (dst2, GEN_INT ((signed char) value));
+-	add_reg_note (insn2, REG_INC, regdst);
+-      }
+-
+-      emit_label (no_extra);
++      dst = gen_rtx_MEM (QImode, gen_rtx_POST_INC(SImode, regdst));
++      rtx_insn *insn = emit_move_insn (dst, GEN_INT((signed char )value));
++      add_reg_note (insn, REG_INC, regdst);
+     }
+ 
+   return true;

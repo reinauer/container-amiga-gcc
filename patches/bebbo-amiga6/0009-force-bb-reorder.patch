@@ -1,0 +1,25 @@
+From 5aa1af990776b9fa2ea49b603231a740aca1b039 Mon Sep 17 00:00:00 2001
+From: bebbo <bebbo@bejy.net>
+Date: Wed, 13 May 2026 21:08:14 +0200
+Subject: [PATCH 09/15] force bb reorder
+
+---
+ gcc/bb-reorder.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/gcc/bb-reorder.c b/gcc/bb-reorder.c
+index 25f8f6a3e98..56a09bdd4f7 100644
+--- a/gcc/bb-reorder.c
++++ b/gcc/bb-reorder.c
+@@ -2626,7 +2626,10 @@ pass_duplicate_computed_gotos::gate (function *fun)
+     return false;
+   return (optimize > 0
+ 	  && flag_expensive_optimizations
+-	  && ! optimize_function_for_size_p (fun));
++#ifdef AMIGA_REORDER	  
++	  && ! optimize_function_for_size_p (fun)
++#endif	  
++	  );
+ }
+ 
+ unsigned int

@@ -9,6 +9,7 @@ ARG BUILD_GCC_VERSION=6.5.0b
 # NDK version - defaults to 3.9 for GCC 15.2, 3.2 for others
 ARG NDK_VERSION
 ARG BUILD_AMIGA_LTO=0
+ARG BUILD_BEBBO_AMIGA6_PATCHES=0
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -49,6 +50,14 @@ RUN NDK=${NDK_VERSION:-$([ "${BUILD_GCC_VERSION}" = "15.2" ] && echo "3.9" || ec
       echo "BUILD_AMIGA_LTO=1 currently requires BUILD_GCC_VERSION=13.3" >&2; \
       exit 1; \
     fi && \
+    if [ "${BUILD_AMIGA_LTO}" = "1" ] && [ "${BUILD_BEBBO_AMIGA6_PATCHES}" = "1" ]; then \
+      echo "BUILD_AMIGA_LTO=1 and BUILD_BEBBO_AMIGA6_PATCHES=1 cannot be combined" >&2; \
+      exit 1; \
+    fi && \
+    if [ "${BUILD_BEBBO_AMIGA6_PATCHES}" = "1" ] && [ "${BUILD_GCC_BRANCH}" != "amiga6" ]; then \
+      echo "BUILD_BEBBO_AMIGA6_PATCHES=1 requires BUILD_GCC_BRANCH=amiga6" >&2; \
+      exit 1; \
+    fi && \
     sed -i -r 's#\S+/gcc#https://github.com/AmigaPorts/gcc#g' default-repos && \
     mkdir -p /opt/amiga-${BUILD_GCC_VERSION} && \
     make branch branch=${BUILD_GCC_BRANCH} mod=gcc && \
@@ -73,6 +82,15 @@ RUN NDK=${NDK_VERSION:-$([ "${BUILD_GCC_VERSION}" = "15.2" ] && echo "3.9" || ec
         find "${BUILD_DIR}/gcc" -name config.cache -type f -delete; \
       fi && \
       rm -f "${BUILD_DIR}/binutils/Makefile" "${BUILD_DIR}/binutils/_done"; \
+    fi && \
+    if [ "${BUILD_BEBBO_AMIGA6_PATCHES}" = "1" ]; then \
+      for p in /root/patches/bebbo-amiga6/*.patch; do \
+        if [ ! -f "$p" ]; then \
+          echo "missing Bebbo amiga6 patch files" >&2; \
+          exit 1; \
+        fi; \
+        patch --forward --batch -d projects/gcc -p1 -i "$p"; \
+      done; \
     fi && \
     make -j $(nproc) all NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION}
 
@@ -149,3 +167,4 @@ ENV PATH=/opt/amiga/bin:$PATH
 LABEL gcc.version="${BUILD_GCC_VERSION}"
 LABEL gcc.branch="${BUILD_GCC_BRANCH}"
 LABEL gcc.amiga_lto="${BUILD_AMIGA_LTO}"
+LABEL gcc.bebbo_amiga6_patches="${BUILD_BEBBO_AMIGA6_PATCHES}"

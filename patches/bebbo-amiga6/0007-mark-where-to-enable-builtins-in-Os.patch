@@ -1,0 +1,39 @@
+From 72438165e0fdc64c1c1fe71fc957fe9b0a77563b Mon Sep 17 00:00:00 2001
+From: bebbo <bebbo@bejy.net>
+Date: Wed, 13 May 2026 21:06:16 +0200
+Subject: [PATCH 07/15] mark where to enable builtins in -Os
+
+---
+ gcc/gimple-fold.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/gcc/gimple-fold.c b/gcc/gimple-fold.c
+index 5924a0dbe88..d87676b058c 100644
+--- a/gcc/gimple-fold.c
++++ b/gcc/gimple-fold.c
+@@ -1309,10 +1309,10 @@ gimple_fold_builtin_strcpy (gimple_stmt_iterator *gsi,
+       replace_call_with_value (gsi, dest);
+       return true;
+     }
+-
++#if AMIGA_ENABLE_BUILTIN
+   if (optimize_function_for_size_p (cfun))
+     return false;
+-
++#endif
+   fn = builtin_decl_implicit (BUILT_IN_MEMCPY);
+   if (!fn)
+     return false;
+@@ -1962,10 +1962,12 @@ gimple_fold_builtin_stpcpy (gimple_stmt_iterator *gsi)
+       || TREE_CODE (len) != INTEGER_CST)
+     return false;
+ 
++#if AMIGA_ENABLE_BUILTIN
+   if (optimize_function_for_size_p (cfun)
+       /* If length is zero it's small enough.  */
+       && !integer_zerop (len))
+     return false;
++#endif
+ 
+   /* If the source has a known length replace stpcpy with memcpy.  */
+   fn = builtin_decl_implicit (BUILT_IN_MEMCPY);

@@ -1,0 +1,480 @@
+From 0e57ad97d1b0f4a24d8da4c0306a2673a307f920 Mon Sep 17 00:00:00 2001
+From: bebbo <bebbo@bejy.net>
+Date: Wed, 13 May 2026 21:08:26 +0200
+Subject: [PATCH 10/15] fix prune_stack_vars
+
+---
+ gcc/ira.c | 413 ++++++++++++++++++++----------------------------------
+ 1 file changed, 155 insertions(+), 258 deletions(-)
+
+diff --git a/gcc/ira.c b/gcc/ira.c
+index dfc93733c52..758eaf50e78 100644
+--- a/gcc/ira.c
++++ b/gcc/ira.c
+@@ -5201,7 +5201,7 @@ fix_stack_regs(rtx_insn * first)
+ 
+ /**
+  * SBF:
+- * Search artifical regs which end up as as spilled variables plus
++ * Search artificial regs which end up as spilled variables plus
+  * - pushed once to the stack
+  * - read only
+  * - where reading the original isn't more expensive as reading from the stack
+@@ -5214,16 +5214,10 @@ fix_stack_regs(rtx_insn * first)
+  *
+  */
+ 
+-// the registers which live longer
+ static std::set<rtx> prolonged_regs;
+-// already resurrected - don't try again
+ static std::set<rtx> forbidden_regs;
+-// removed insn - needed for resurrection, DEST contains the register to use during restiore
+-static std::vector<std::pair<rtx, rtx_insn *> > reg2deleted_insn;
+-// modified insns
+-static std::vector<std::pair<rtx, rtx_insn *> > dst2modified_insn;
+-// REG_EQUAL notes
+-static std::vector<std::pair<rtx_insn *, rtx> > insn2req_equals;
++static std::vector<std::pair<rtx, rtx_insn *>> reg2deleted_insn;
++static std::vector<std::pair<rtx, rtx_insn *>> dst2modified_insn;
+ 
+ static int prune_pass;
+ 
+@@ -5234,286 +5228,189 @@ init_prune_stack_vars ()
+   forbidden_regs.clear();
+   reg2deleted_insn.clear();
+   dst2modified_insn.clear();
+-  insn2req_equals.clear();
+   prune_pass = 0;
+-
+-  rtx_insn *insn;
+-  for (insn = get_insns (); insn; insn = NEXT_INSN (insn))
+-    if (NONJUMP_INSN_P(insn))
+-      {
+-	rtx note = find_reg_note (insn, REG_EQUAL, NULL_RTX);
+-	if (note)
+-	  insn2req_equals.push_back(std::make_pair(insn, note));
+-      }
+ }
+ 
+-/**
+- * Search eliminable artifical spilled variables and replace them.
+- */
+ static bool
+ prune_stack_vars (bool loops_p)
+ {
+   bool changed = false;
+-  int regno, max_regno;
+-  max_regno = max_reg_num ();
+-
++  int max_regno = max_reg_num ();
+ 
+-  if (ira_dump_file )
+-    fprintf(ira_dump_file, "pruning stack variables pass %d in: %s\n", prune_pass + 1, lang_hooks.decl_printable_name (current_function_decl, 2));
++  if (ira_dump_file)
++    fprintf (ira_dump_file,
++             "pruning stack variables pass %d in: %s\n",
++             prune_pass + 1,
++             lang_hooks.decl_printable_name (current_function_decl, 2));
+ 
+-  /*
+-   * Check the longer living registers which are used in the replacement mem.
+-   * If these end up spilled, it's better to live with the spilled variable,
+-   * => undo the change.
+-   */
+-  std::set<rtx>::iterator i = prolonged_regs.begin();
+-  for(;i != prolonged_regs.end(); ++i)
++  /* only mark "forbidden" no undo. */
++  for (rtx reg : prolonged_regs)
+     {
+-      rtx prolonged_reg = *i;
+-      if (REGNO(prolonged_reg) < FIRST_PSEUDO_REGISTER)
+-	continue;
+-
+-      /* no double undo. */
+-      if (forbidden_regs.find(prolonged_reg) != forbidden_regs.end())
+-	continue;
+-
+-      if (ira_regno_allocno_map[REGNO(prolonged_reg)] && ira_regno_allocno_map[REGNO(prolonged_reg)]->hard_regno < 0)
+-	{
+-	  changed = true;
+-	  if (ira_dump_file)
+-	    {
+-	      fprintf(ira_dump_file, "***************************************************\n");
+-	      fprintf(ira_dump_file, "whoops: %d did not get a hard register... undoing :-)\n", REGNO(prolonged_reg));
+-	    }
+-
+-	  /* once undone, prevent working with / undoing them again and prevent endless loops. */
+-	  forbidden_regs.insert(prolonged_reg);
+-
+-	  std::vector<std::pair<rtx, rtx_insn *> >::iterator j = reg2deleted_insn.begin();
+-	  for(; j != reg2deleted_insn.end(); ++j)
+-	    {
+-	      std::pair<rtx, rtx_insn *> p = *j;
+-	      if (p.first != prolonged_reg)
+-		continue;
+-
+-	      /* undo the deletion and restore the insn. */
+-	      rtx pattern = PATTERN(p.second);
+-	      rtx_insn * undel = emit_insn_after(pattern, p.second);
++      if (REGNO (reg) < FIRST_PSEUDO_REGISTER)
++        continue;
+ 
+-	      rtx src = SET_SRC(pattern);
+-	      rtx dst = SET_DEST(pattern);
+-	      std::vector<std::pair<rtx, rtx_insn *> >::iterator  k = dst2modified_insn.begin();
+-	      for(; k != dst2modified_insn.end(); ++k)
+-		{
+-		  std::pair<rtx, rtx_insn *> q = *k;
+-		  if (q.first != dst)
+-		    continue;
++      if (forbidden_regs.count (reg))
++        continue;
+ 
+-		  /* undo the replacement. */
+-		  rtx_insn * insn = q.second;
+-		  replace_rtx(insn, src, dst, true);
+-		  df_insn_rescan(insn);
+-		}
+-	    }
+-	}
++      ira_allocno *a = ira_regno_allocno_map[REGNO (reg)];
++      if (a && a->hard_regno < 0)
++        {
++          if (ira_dump_file)
++            {
++              fprintf (ira_dump_file,
++                       "***************************************************\n");
++              fprintf (ira_dump_file,
++                       "whoops: %d did not get a hard register... giving up on %d\n",
++                       REGNO (reg));
++            }
++
++          forbidden_regs.insert (reg);
++        }
+     }
+ 
+   if (prune_pass <= 3)
+     {
+-      // iterate over all registers.
+-      for (regno = FIRST_PSEUDO_REGISTER; regno < max_regno; regno++)
+-	{
+-	  // this only applies to spilled variables
+-	  if (!ira_regno_allocno_map[regno] || ira_regno_allocno_map[regno]->hard_regno >= 0)
+-	    continue;
+-
+-	  if (ira_reg_equiv[regno].constant != NULL_RTX)
+-	    continue;
+-
+-	  // which are defined once
+-	  if (DF_REG_DEF_COUNT(regno) != 1)
+-	    continue;
+-
+-	  df_ref defref;
+-	  defref = DF_REG_DEF_CHAIN(regno);
+-
+-	  // no handling for parallel insn's for now.
+-	  rtx_insn * def = defref->base.insn_info->insn;
+-	  rtx set = single_set(def);
+-	  if (!set)
+-	    continue;
+-
+-	  // only consider MEM <-> MEM replacements
+-	  rtx src = SET_SRC(set);
+-	  if (!MEM_P(src))
+-	    continue;
+-
+-	  rtx dst = SET_DEST(set);
+-	  if (!REG_P(dst))
+-	    continue;
+-
+-	  // only temp / artificial vars!
+-	  tree var = REG_EXPR(dst);
+-	  if (!var)
+-	    continue;
+-	  if (var->base.code != SSA_NAME)// !DECL_ARTIFICIAL (var))
+-	    continue;
+-
+-	  /**
+-	   * Handle MEM of
+-	   *  - reg
+-	   *  - plus(reg, int)
+-	   *  - symbol_ref
+-	   *  - plus(symbol_ref, int)
+-	   */
+-	  rtx address = XEXP(src, 0);
+-	  if (!( REG_P(address)
+-	      || SYMBOL_REF_P(address)
+-	      || (GET_CODE(address) == PLUS
+-		  && (REG_P(XEXP(address, 0))
+-		      || SYMBOL_REF_P(XEXP(address,0))
+-		  )
+-		  && CONST_INT_P(XEXP(address, 1)))
+-	     ))
+-	    continue;
+-
+-	  rtx address_reg = 0;
+-	  if (REG_P(address))
+-	    address_reg = address;
+-	  else if (GET_CODE(address) == PLUS && REG_P(XEXP(address, 0)))
+-	    address_reg = XEXP(address, 0);
+-
+-	  /* we tried already to prolong the live time of this register. don't touch again. */
+-	  if (address_reg && forbidden_regs.find(address_reg) != forbidden_regs.end())
+-	    continue;
+-
+-
+-	  df_ref ref;
+-	  machine_mode mode = GET_MODE(dst);
+-	  bool skip = false;
+-	  if (address_reg)
+-	    {
+-	      if (DF_REG_DEF_COUNT(REGNO(address_reg)) != 1)
+-		skip = true;
+-	      else
+-	      /* check that there is no use as dest and all uses refer to this regno. */
+-	      for(ref = DF_REG_USE_CHAIN(REGNO(address_reg));ref; ref = DF_REF_NEXT_REG (ref))
+-		{
+-		  if (!ref->base.insn_info)
+-		    continue;
+-
+-		  rtx_insn * insn = ref->base.insn_info->insn;
+-		  rtx iset = single_set(insn);
+-		  if (!iset || rtx_equal_p(src, SET_DEST(iset)))
+-		    {
+-		      skip = true;
+-		      break;
+-		    }
+-
+-		  rtx isrc = SET_SRC(iset);
+-		  /* does it feed other vars as well? */
+-		  if (rtx_equal_p(src, isrc) && !rtx_equal_p(dst, SET_DEST(iset)))
+-		    {
+-		      skip = true;
+-		      break;
+-		    }
+-		}
+-	    }
+-
+-	  if (skip)
+-	    {
+-	      // do not try again
+-	      if (address_reg)
+-		forbidden_regs.insert(address_reg);
+-	      continue;
+-	    }
+-
+-	  if (address_reg)
+-	    {
+-	      if (ira_dump_file)
+-		fprintf(ira_dump_file, "use %d instead of ", REGNO(address_reg));
+-	      prolonged_regs.insert(address_reg);
+-	      reg2deleted_insn.push_back(std::make_pair(address_reg, def));
+-	    }
+-
+-	  if (internal_flag_ira_verbose > 0 && ira_dump_file != NULL)
+-	    {
+-	      fprintf(ira_dump_file, "ref %d:\t", regno);
+-	      df_refs_chain_dump(DF_REG_DEF_CHAIN(regno), true, ira_dump_file);
+-	      df_refs_chain_dump(DF_REG_USE_CHAIN(regno), true, ira_dump_file);
+-	      fprintf(ira_dump_file, "\n");
+-	    }
+-
+-	  /* drop the assignment. */
+-	  if (internal_flag_ira_verbose > 0 && ira_dump_file != NULL)
+-	    {
+-	      fprintf(ira_dump_file, "eliminating insn:\n");
+-	      print_inline_rtx(ira_dump_file, def, 2);
+-	    }
+-
+-	  /* replace the variable in all locations. */
+-	  bool ok = true;
+-	  for(ref = DF_REG_USE_CHAIN(regno);ref; ref = DF_REF_NEXT_REG (ref))
+-	    {
+-	      rtx_insn * insn = ref->base.insn_info->insn;
+-	      if (internal_flag_ira_verbose > 0 && ira_dump_file != NULL)
+-		{
+-		  fprintf(ira_dump_file, "from:\n");
+-		  print_inline_rtx(ira_dump_file, insn, 2);
+-		}
+-	      validate_replace_rtx_group(dst, src, insn);
+-	      df_insn_rescan(insn);
+-	      if (internal_flag_ira_verbose > 0 && ira_dump_file != NULL)
+-		{
+-		  fprintf(ira_dump_file, "to:\n");
+-		  print_inline_rtx(ira_dump_file, insn, 2);
+-		}
+-	      if (address_reg)
+-		dst2modified_insn.push_back(std::make_pair(dst, insn));
+-	    }
+-
+-	  if (ok && apply_change_group())
+-	    {
+-   	      changed = true;
+-	      SET_INSN_DELETED(def)
+-	    }
+-	  else
+-	    {
+-	      cancel_changes(0);
+-	      forbidden_regs.insert(address_reg);
+-	    }
+-	}
++      for (int regno = FIRST_PSEUDO_REGISTER; regno < max_regno; regno++)
++        {
++          ira_allocno *a = ira_regno_allocno_map[regno];
++          if (!a || a->hard_regno >= 0)
++            continue;
++
++          if (ira_reg_equiv[regno].constant)
++            continue;
++
++          if (DF_REG_DEF_COUNT (regno) != 1)
++            continue;
++
++          df_ref defref = DF_REG_DEF_CHAIN (regno);
++          rtx_insn *def = defref->base.insn_info->insn;
++          rtx set = single_set (def);
++          if (!set)
++            continue;
++
++          rtx src = SET_SRC (set);
++          rtx dst = SET_DEST (set);
++
++          if (!MEM_P (src) || !REG_P (dst))
++            continue;
++
++          tree var = REG_EXPR (dst);
++          if (!var || TREE_CODE (var) != SSA_NAME)
++            continue;
++
++          rtx address = XEXP (src, 0);
++          if (!(REG_P (address)
++                || SYMBOL_REF_P (address)
++                || (GET_CODE (address) == PLUS
++                    && (REG_P (XEXP (address, 0))
++                        || SYMBOL_REF_P (XEXP (address, 0)))
++                    && CONST_INT_P (XEXP (address, 1)))))
++            continue;
++
++          rtx address_reg = 0;
++          if (REG_P (address))
++            address_reg = address;
++          else if (GET_CODE (address) == PLUS && REG_P (XEXP (address, 0)))
++            address_reg = XEXP (address, 0);
++
++          if (address_reg && forbidden_regs.count (address_reg))
++            continue;
++
++          bool skip = false;
++
++          if (address_reg)
++            {
++              if (DF_REG_DEF_COUNT (REGNO (address_reg)) != 1)
++                skip = true;
++              else
++                {
++                  for (df_ref ref = DF_REG_USE_CHAIN (REGNO (address_reg));
++                       ref;
++                       ref = DF_REF_NEXT_REG (ref))
++                    {
++                      if (!ref->base.insn_info)
++                        continue;
++
++                      rtx_insn *insn = ref->base.insn_info->insn;
++                      rtx iset = single_set (insn);
++
++                      if (!iset || rtx_equal_p (src, SET_DEST (iset)))
++                        {
++                          skip = true;
++                          break;
++                        }
++
++                      if (rtx_equal_p (src, SET_SRC (iset))
++                          && !rtx_equal_p (dst, SET_DEST (iset)))
++                        {
++                          skip = true;
++                          break;
++                        }
++                    }
++                }
++            }
++
++          if (skip)
++            {
++              if (address_reg)
++                forbidden_regs.insert (address_reg);
++              continue;
++            }
++
++          if (address_reg)
++            {
++              prolonged_regs.insert (address_reg);
++            }
++
++          /* collect uses first. */
++          std::vector<rtx_insn *> uses;
++          for (df_ref ref = DF_REG_USE_CHAIN (regno);
++               ref;
++               ref = DF_REF_NEXT_REG (ref))
++            {
++              if (!ref->base.insn_info)
++                continue;
++              uses.push_back (ref->base.insn_info->insn);
++            }
++
++          for (rtx_insn *insn : uses)
++            {
++              validate_replace_rtx_group (dst, src, insn);
++              df_insn_rescan (insn);
++            }
++
++          if (apply_change_group ())
++            {
++              changed = true;
++              /* really delete */
++              delete_insn (def);
++            }
++          else
++            {
++              cancel_changes (0);
++              if (address_reg)
++                forbidden_regs.insert (address_reg);
++            }
++        }
+     }
+ 
+   if (changed)
+     {
+-      /* make stats visible. */
+-      if (internal_flag_ira_verbose > 0 && ira_dump_file != NULL)
+-	calculate_allocation_cost ();
+-
+-      /* the lifetime of all registers must be reconsidered - reset what's needed. */
+       regstat_free_n_sets_and_refs ();
+       regstat_free_ri ();
+       if (loops_p)
+-	loop_optimizer_finalize ();
++        loop_optimizer_finalize ();
+       free_dominance_info (CDI_DOMINATORS);
+ 
+-      /* plus restore the REG_EQUAL notes which were recorded during init_prune_stack_vars() ! */
+-      std::vector<std::pair<rtx_insn *, rtx> >::iterator i2r = insn2req_equals.begin();
+-      for (;i2r != insn2req_equals.end(); ++i2r)
+-	{
+-	  rtx_insn * insn = i2r->first;
+-	  REG_NOTES (insn) = i2r->second;
+-	}
+-
+-      df_mark_solutions_dirty();
++      df_mark_solutions_dirty ();
+       df_analyze ();
+     }
+ 
+-  ++ prune_pass;
++  prune_pass++;
+   return changed;
+ }
+ 
++
+ /* If the backend knows where to allocate pseudos for hard
+    register initial values, register these allocations now.  */
+ static void

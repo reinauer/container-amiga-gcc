@@ -1,0 +1,252 @@
+From ecc0ef431c7046c89324e43c47be57b55ab3533e Mon Sep 17 00:00:00 2001
+From: bebbo <bebbo@bejy.net>
+Date: Wed, 13 May 2026 20:09:56 +0200
+Subject: [PATCH 05/15] improved auto-inc-dec
+
+---
+ gcc/auto-inc-dec.c | 187 ++++++++++++++++++++++++++++-----------------
+ 1 file changed, 119 insertions(+), 68 deletions(-)
+
+diff --git a/gcc/auto-inc-dec.c b/gcc/auto-inc-dec.c
+index 85d250be15b..4e15955a24b 100644
+--- a/gcc/auto-inc-dec.c
++++ b/gcc/auto-inc-dec.c
+@@ -584,119 +584,170 @@ attempt_change (rtx new_addr, rtx inc_reg)
+   return true;
+ }
+ 
+-/* SBF: Search an add after the mem use which matches:
+- * replace the tmp register with the found register
+- * let the inc_insn to use that register.
+- * and the post_inc is modified to use the mode size.
+- * the sum stays the same
+- *
+- * b = a + x
+- * *b = ...
+- * a = a + x + 4
+- * ->
+- * a = a + x
+- * *a = ...
+- * a = a + 4
+- *
+- * that's a post_inc now
+- */
++/* SBF: Try to turn a PRE_ADD pattern into a POST_INC pattern:
++   We have something like
++
++     b = a + x
++     *b = ...
++     a = a + x + SIZE
++
++   and we want
++
++     a = a + x
++     *a++ = ...
++     a = a + SIZE
++
++   INC_INSN describes the first add, MEM_INSN the memory, and we search
++   forward for the trailing add.  */
+ 
+ static bool
+ convert_to_post_inc (rtx_insn *last_insn, rtx *inc_reg, int size)
+ {
++  rtx_insn *scan, *next, *add_insn;
++  df_insn_info *insn_info;
++  df_ref use;
++  rtx set, dest, src, base, off, mint;
++  rtx ipat;
+   int add1, add2;
+-  rtx set, reg, src, mint;
+-  rtx_insn *insn, *next;
+ 
+-  /* SBF: check if a next insn using the inc_insn's src matches.*/
+-  if (!CONST_INT_P(inc_insn.reg1) || last_insn != mem_insn.insn)
++  /* We only handle the case where reg1 is a constant and LAST_INSN is
++     the MEM_INSN we are working with.  */
++  if (!CONST_INT_P (inc_insn.reg1) || last_insn != mem_insn.insn)
++    return false;
++
++  /* MEM_INSN must be a simple MEM (reg0).  */
++  if (GET_CODE (*mem_insn.mem_loc) != MEM)
++    return false;
++
++  base = XEXP (*mem_insn.mem_loc, 0);
++  if (!REG_P (base) || REGNO (base) != REGNO (inc_insn.reg0))
+     return false;
+ 
+-  for (insn = NEXT_INSN (mem_insn.insn); insn; insn = next)
++  /* Scan forward from MEM_INSN to find a trailing add to the same base
++     register, making sure there are no intervening uses of that register.  */
++  add_insn = NULL;
++
++  for (scan = NEXT_INSN (mem_insn.insn); scan; scan = next)
+     {
+-      df_insn_info *insn_info;
+-      df_ref use;
++      next = NEXT_INSN (scan);
+ 
+-      next = NEXT_INSN (insn);
+-      if (DEBUG_INSN_P(insn) || NOTE_P(insn))
+-	continue;
++      if (DEBUG_INSN_P (scan) || NOTE_P (scan))
++        continue;
+ 
+-      /* stop at label, jump. */
+-      if (LABEL_P(insn) || JUMP_P(insn))
+-	return false;
++      /* Stop at control flow boundaries.  */
++      if (LABEL_P (scan) || JUMP_P (scan))
++        return false;
+ 
+-      set = single_set (insn);
++      set = single_set (scan);
+       if (!set)
+-	return false;
++        return false;
+ 
+-      if (GET_CODE (set) != SET)
+-	return false;
++      dest = SET_DEST (set);
+ 
+-      reg = SET_DEST(set);
+-      if (REG_P(reg) && REGNO(reg) == REGNO(inc_insn.reg0))
+-	break;
++      /* If this insn writes the base register, it is our candidate.  */
++      if (REG_P (dest) && REGNO (dest) == REGNO (inc_insn.reg0))
++        {
++          add_insn = scan;
++          break;
++        }
+ 
+-      /* must not use the reg. */
+-      insn_info = DF_INSN_INFO_GET(insn);
++      /* Otherwise, it must not use the base register at all.  */
++      insn_info = DF_INSN_INFO_GET (scan);
+       FOR_EACH_INSN_INFO_USE (use, insn_info)
+-	if (DF_REF_REG (use) == inc_insn.reg0)
+-	  return false;
++        {
++          rtx ureg = DF_REF_REG (use);
++          if (REG_P (ureg)
++              && REGNO (ureg) == REGNO (inc_insn.reg0))
++            return false;
++        }
+     }
+-  /* found nothing. */
+-  if (!insn)
++
++  /* Found nothing suitable.  */
++  if (!add_insn)
+     return false;
+ 
+-  /* src must be PLUS (reg, const_int). */
+-  src = SET_SRC(set);
+-  if (GET_CODE(src) != PLUS || XEXP(src, 0) != inc_insn.reg0
+-      || !CONST_INT_P(XEXP (src, 1)))
++  /* Check that ADD_INSN is of the form:
++       reg0 = reg0 + const_int.  */
++  set = single_set (add_insn);
++  if (!set)
+     return false;
+ 
+-  add2 = INTVAL(XEXP (src, 1));
+-  add1 = INTVAL(inc_insn.reg1);
+-  if (add1 + size != add2)
++  dest = SET_DEST (set);
++  src  = SET_SRC (set);
++
++  if (!REG_P (dest) || REGNO (dest) != REGNO (inc_insn.reg0))
++    return false;
++
++  if (GET_CODE (src) != PLUS)
++    return false;
++
++  base = XEXP (src, 0);
++  off  = XEXP (src, 1);
++
++  if (!REG_P (base) || REGNO (base) != REGNO (inc_insn.reg0))
++    return false;
++
++  if (!CONST_INT_P (off))
+     return false;
+ 
++  add1 = INTVAL (inc_insn.reg1);
++  add2 = INTVAL (off);
++
++  /* We want: add1 + SIZE == add2.  */
++  if (add1 + size != add2)
++    return false;
+ 
+-  /* found a candidate. */
+   if (dump_file)
+     {
+-      fprintf(dump_file, "converting from PRE_ADD:\n");
++      fprintf (dump_file, "converting from PRE_ADD:\n");
+       dump_insn_slim (dump_file, inc_insn.insn);
+       dump_insn_slim (dump_file, mem_insn.insn);
+-      dump_insn_slim (dump_file, insn);
++      dump_insn_slim (dump_file, add_insn);
+     }
+ 
+-  mint = GEN_INT(size);
+-
+-  validate_change (inc_insn.insn, &SET_DEST(PATTERN (inc_insn.insn)), inc_insn.reg0,
+-		   true);
+-  validate_change (mem_insn.insn, &XEXP(*mem_insn.mem_loc, 0),
+-		   inc_insn.reg0, true);
+-  validate_change (insn, &SET_SRC(set),
+-		   gen_rtx_PLUS(SImode, inc_insn.reg0, mint), true);
++  mint = GEN_INT (size);
+ 
+-  if (!apply_change_group ())
++  /* Safely change the original INC_INSN so that its destination is REG0.  */
++  ipat = PATTERN (inc_insn.insn);
++  if (GET_CODE (ipat) != SET || !REG_P (SET_DEST (ipat)))
+     return false;
+ 
++  validate_change (inc_insn.insn, &SET_DEST (ipat), inc_insn.reg0, true);
++
++  /* Change MEM_INSN to use REG0 as its address base.  */
++  validate_change (mem_insn.insn,
++                   &XEXP (*mem_insn.mem_loc, 0),
++                   inc_insn.reg0, true);
++
++  /* Change ADD_INSN to be: reg0 = reg0 + SIZE.  */
++  validate_change (add_insn, &SET_SRC (set),
++                   gen_rtx_PLUS (GET_MODE (base), inc_insn.reg0, mint),
++                   true);
+ 
++  if (!apply_change_group ())
++    return false;
+ 
+   if (dump_file)
+     {
+-      fprintf(dump_file, "converted to POST_INC:\n");
++      fprintf (dump_file, "converted to POST_INC:\n");
+       dump_insn_slim (dump_file, inc_insn.insn);
+       dump_insn_slim (dump_file, mem_insn.insn);
+-      dump_insn_slim (dump_file, insn);
++      dump_insn_slim (dump_file, add_insn);
+     }
+ 
++  /* Update INC_INSN description to reflect the new post-inc form.  */
+   *inc_reg = mem_insn.reg0 = inc_insn.reg0;
+ 
+-  inc_insn.insn = insn;
+-  inc_insn.pat = set;
+-  inc_insn.reg1 = mint;
+-  inc_insn.reg1_val = size;
++  inc_insn.insn = add_insn;
++  inc_insn.pat  = set;
++
++  inc_insn.reg1_is_const = true;
++  inc_insn.reg1          = mint;
++  inc_insn.reg1_val      = size;
++  /* Set reg1_state appropriately for your enum inc_state.  */
++  /* inc_insn.reg1_state = INC_CONST; */
++
+   inc_insn.form = FORM_POST_INC;
+-  last_insn = insn;
+ 
+   return true;
+ }

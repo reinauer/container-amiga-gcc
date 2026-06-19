@@ -1,0 +1,57 @@
+From cd4cd06b3a28b62855f0b15ce2624005707b6a0d Mon Sep 17 00:00:00 2001
+From: bebbo <bebbo@bejy.net>
+Date: Wed, 13 May 2026 20:15:59 +0200
+Subject: [PATCH 06/15] disable loop unrolling if register pressure is too high
+
+---
+ gcc/loop-unroll.c | 30 ++++++++++++++++++++++++++++++
+ 1 file changed, 30 insertions(+)
+
+diff --git a/gcc/loop-unroll.c b/gcc/loop-unroll.c
+index c68cbc54892..12e7900be0f 100644
+--- a/gcc/loop-unroll.c
++++ b/gcc/loop-unroll.c
+@@ -34,6 +34,7 @@ along with GCC; see the file COPYING3.  If not see
+ #include "params.h"
+ #include "dojump.h"
+ #include "expr.h"
++#include "df.h"
+ #include "dumpfile.h"
+ 
+ /* This pass performs loop unrolling.  We only perform this
+@@ -218,6 +219,35 @@ decide_unrolling (int flags)
+   /* Scan the loops, inner ones first.  */
+   FOR_EACH_LOOP (loop, LI_FROM_INNERMOST)
+     {
++
++    /* m68k-specific: disable unrolling when register pressure is too high.  */
++    #if defined(TARGET_M68K)
++
++      unsigned max_live = 0;
++      basic_block *bbs = get_loop_body (loop);
++      unsigned nbbs = loop->num_nodes;
++
++      for (unsigned i = 0; i < nbbs; i++)
++        {
++          basic_block bb = bbs[i];
++          bitmap live = DF_LIVE_IN (bb);
++          unsigned count = bitmap_count_bits (live);
++          if (count > max_live)
++            max_live = count;
++        }
++
++      /* Threshold tuned for m68k: more than ~12 live values kills performance.  */
++      if (max_live > 12)
++        {
++          if (dump_file)
++            fprintf (dump_file,
++                     "m68k: disabling unrolling in loop %d (live=%u)\n",
++                     loop->num, max_live);
++          continue;
++        }
++
++    #endif
++
+       loop->lpt_decision.decision = LPT_NONE;
+       location_t locus = get_loop_location (loop);
+ 

@@ -1,0 +1,24 @@
+From 3d2a571d076bd6ecacc0506edb145576fa3b5549 Mon Sep 17 00:00:00 2001
+From: bebbo <bebbo@bejy.net>
+Date: Mon, 1 Jun 2026 08:00:23 +0200
+Subject: [PATCH 15/15] also ignoew ENTRY_VALUE mode check
+
+---
+ gcc/explow.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/gcc/explow.c b/gcc/explow.c
+index c59d0011f32..771dada4ce0 100644
+--- a/gcc/explow.c
++++ b/gcc/explow.c
+@@ -84,7 +84,9 @@ plus_constant (machine_mode mode, rtx x, HOST_WIDE_INT c,
+   rtx tem;
+   int all_constant = 0;
+ 
+-  gcc_assert (GET_MODE (x) == VOIDmode || GET_MODE (x) == mode);
++  gcc_assert (GET_MODE (x) == VOIDmode || GET_MODE (x) == mode
++	      || GET_CODE (x) == ENTRY_VALUE
++	      );
+ 
+   if (c == 0)
+     return x;

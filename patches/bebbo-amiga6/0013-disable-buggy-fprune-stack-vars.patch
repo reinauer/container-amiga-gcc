@@ -1,0 +1,22 @@
+From 742a8672ad622996ecc311a3e2b074d8c60128a9 Mon Sep 17 00:00:00 2001
+From: bebbo <bebbo@bejy.net>
+Date: Tue, 19 May 2026 12:49:51 +0200
+Subject: [PATCH 13/15] disable buggy -fprune-stack-vars
+
+---
+ gcc/opts.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/gcc/opts.c b/gcc/opts.c
+index ed4e1a4d4e7..aaaae1e5214 100644
+--- a/gcc/opts.c
++++ b/gcc/opts.c
+@@ -506,7 +506,7 @@ static const struct default_options default_options_table[] =
+ //#endif
+     },
+ 
+-    { OPT_LEVELS_2_PLUS, OPT_fprune_stack_vars, NULL, 1 },
++//    { OPT_LEVELS_2_PLUS, OPT_fprune_stack_vars, NULL, 1 },
+     { OPT_LEVELS_2_PLUS, OPT_freorder_functions, NULL, 1 },
+     { OPT_LEVELS_2_PLUS, OPT_ftree_vrp, NULL, 1 },
+     { OPT_LEVELS_2_PLUS, OPT_ftree_pre, NULL, 1 },

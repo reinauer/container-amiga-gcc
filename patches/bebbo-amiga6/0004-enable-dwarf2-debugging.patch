@@ -1,0 +1,59 @@
+From 4f3b28358518723071cd3c19e88d2fb4e46b5944 Mon Sep 17 00:00:00 2001
+From: bebbo <bebbo@bejy.net>
+Date: Wed, 13 May 2026 20:07:32 +0200
+Subject: [PATCH 04/15] enable dwarf2 debugging
+
+---
+ gcc/config.gcc            |  6 +++---
+ gcc/config/m68k/amigaos.h | 12 +++++++-----
+ 2 files changed, 10 insertions(+), 8 deletions(-)
+
+diff --git a/gcc/config.gcc b/gcc/config.gcc
+index aa07dd5810a..dd865f66834 100644
+--- a/gcc/config.gcc
++++ b/gcc/config.gcc
+@@ -1951,8 +1951,8 @@ m68k*-*-amigaosvasm*)
+ 	;;
+ m68k*-*-amigaos*)
+ 	default_m68k_cpu=68000
+-	tm_file="${tm_file}  dbx.h newlib-stdint.h m68k/m68kamigaos.h"
+-	tm_defines="${tm_defines} MOTOROLA=1 TARGET_AMIGAOS TARGET_CPU_DEFAULT=0"
++	tm_file="${tm_file} newlib-stdint.h m68k/m68kamigaos.h"
++	tm_defines="${tm_defines} MOTOROLA=1 TARGET_AMIGAOS TARGET_CPU_DEFAULT=0 DWARF2_DEBUGGING_INFO"
+ 	tmake_file="m68k/t-floatlib m68k/t-m68kbare m68k/t-amigaos"
+ 	tm_p_file="${tm_p_file} m68k/amigaos-protos.h"
+ 	extra_options="${extra_options} m68k/amigaos.opt"
+@@ -1973,7 +1973,7 @@ m68k*-*-openbsd*)
+ 	default_m68k_cpu=68020
+ 	default_cf_cpu=5475
+ 	# needed to unconfuse gdb
+-	tm_defines="${tm_defines} OBSD_OLD_GAS"
++	tm_defines="${tm_defines} OBSD_OLD_GAS "
+ 	tm_file="${tm_file} openbsd.h openbsd-stdint.h openbsd-libpthread.h m68k/openbsd.h"
+ 	extra_options="${extra_options} openbsd.opt"
+ 	tmake_file="t-openbsd m68k/t-openbsd"
+diff --git a/gcc/config/m68k/amigaos.h b/gcc/config/m68k/amigaos.h
+index fb3d7ca98fe..b2ead9953c3 100644
+--- a/gcc/config/m68k/amigaos.h
++++ b/gcc/config/m68k/amigaos.h
+@@ -114,13 +114,15 @@ amiga_named_section (const char *name, unsigned int flags, tree decl);
+ 
+ /* Various ABI issues.  */
+ 
+-/* This is (almost;-) BSD, so it wants DBX format.  */
+-#undef DBX_DEBUGGING_INFO
+-#define DBX_DEBUGGING_INFO
++/* enable dwarf2 */
++#undef PREFERRED_DEBUGGING_TYPE
++#define PREFERRED_DEBUGGING_TYPE DWARF2_DEBUG
+ 
+-/* GDB goes mad if it sees the function end marker.  */
++#define DWARF2_DEBUGGING_INFO 1
++#define DWARF2_ASM_LINE_DEBUG_INFO 1
+ 
+-#define NO_DBX_FUNCTION_END 1
++#undef DBX_DEBUGGING_INFO
++#undef SDB_DEBUGGING_INFO
+ 
+ /* Allow folding division by zero.  */
+ 

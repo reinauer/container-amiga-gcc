@@ -1,0 +1,22 @@
+From 8f5ea9ee835d65ac5c53554115b1713060a4864c Mon Sep 17 00:00:00 2001
+From: bebbo <bebbo@bejy.net>
+Date: Mon, 2 Mar 2026 11:24:49 +0100
+Subject: [PATCH 03/15] fix uninitialzed struct m68k_address
+
+---
+ gcc/config/m68k/m68k2.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/gcc/config/m68k/m68k2.c b/gcc/config/m68k/m68k2.c
+index e367999b4a0..74ac1591abf 100755
+--- a/gcc/config/m68k/m68k2.c
++++ b/gcc/config/m68k/m68k2.c
+@@ -620,7 +620,7 @@ m68k_index_uses_reg_2 (rtx reg, rtx x)
+ static int
+ m68k_index_uses_reg_mem (rtx reg, rtx mem)
+ {
+-  struct m68k_address addr;
++  struct m68k_address addr; memset(&addr, 0, sizeof(addr));
+   rtx x = XEXP(mem, 0);
+ 
+   if (!decompose_mem (0, &x, &addr, /*strict_p=*/0))
