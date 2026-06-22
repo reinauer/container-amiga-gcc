@@ -37,11 +37,12 @@ done
 DOCKER_USER="stefanreinauer"
 IMAGE_NAME="amiga-gcc"
 
-# Define GCC versions and their corresponding branches
-declare -A GCC_VERSIONS=(
-    ["6.5.0b"]="amiga6"
-    ["13.3"]="amiga13.3"
-    ["15.2"]="amiga15.2"
+# Define GCC versions and their corresponding branches.  Keep this compatible
+# with macOS /bin/bash 3.2, which does not support associative arrays.
+GCC_VERSION_SPECS=(
+    "6.5.0b:amiga6"
+    "13.3:amiga13.3"
+    "15.2:amiga15.2"
 )
 
 
@@ -93,8 +94,9 @@ DATE=$(date +%Y%m%d)
 EXTRA=$(cat .extra 2>/dev/null)
 
 # --- Build and push each GCC version ---
-for GCC_VERSION in "${!GCC_VERSIONS[@]}"; do
-    GCC_BRANCH="${GCC_VERSIONS[$GCC_VERSION]}"
+for GCC_VERSION_SPEC in "${GCC_VERSION_SPECS[@]}"; do
+    GCC_VERSION="${GCC_VERSION_SPEC%%:*}"
+    GCC_BRANCH="${GCC_VERSION_SPEC#*:}"
 
     echo "========================================"
     echo "Building GCC ${GCC_VERSION} (branch: ${GCC_BRANCH})"
