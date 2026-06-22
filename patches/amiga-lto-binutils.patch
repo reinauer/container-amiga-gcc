@@ -129,7 +129,7 @@ index 66732528..216cb997 100644
 +  return (name != NULL
 +	  && (strcmp (name, ".stab") == 0
 +	      || strcmp (name, ".stabstr") == 0
-+	      || strcmp (name, ".dwarf") == 0
++	      || strcmp (name, ".dwarf2") == 0
 +	      || amiga_is_lto_section_name (name)));
 +}
 +
@@ -140,8 +140,8 @@ index 66732528..216cb997 100644
      case HUNK_DEBUG:
        /* handle .stab and .stabs as real sections. */
        if (current_name && (0 == strcmp (current_name, ".stab") || 0 == strcmp (current_name, ".stabstr")
--	  || 0 == strncmp (current_name, ".debug_", 7) || 0 == strcmp (current_name, ".dwarf")))
-+	  || 0 == strncmp (current_name, ".debug_", 7) || 0 == strcmp (current_name, ".dwarf")
+-	  || 0 == strncmp (current_name, ".debug_", 7) || 0 == strcmp (current_name, ".dwarf2")))
++	  || 0 == strncmp (current_name, ".debug_", 7) || 0 == strcmp (current_name, ".dwarf2")
 +	  || amiga_is_lto_section_name (current_name)))
  	{
 -	  secflags = SEC_HAS_CONTENTS;
@@ -154,7 +154,7 @@ index 66732528..216cb997 100644
  	      && !(amiga_base_relative && !strcmp (p->name, ".bss")))
  	    {
 -	      /* don't count debug sections. */
--	      if (strcmp (p->name, ".stab") && strcmp(p->name, ".dwarf"))
+-	      if (strcmp (p->name, ".stab") && strcmp(p->name, ".dwarf2"))
 +	      if (amiga_skip_loadfile_section (p->name))
 +		remove_section_index (p, index_map);
 +	      else
@@ -166,7 +166,7 @@ index 66732528..216cb997 100644
  	    continue;
  
 -	  /* don't add debug sections. */
--	  if (!strcmp (p->name, ".stab") || !strcmp (p->name, ".stabstr") || !strcmp(p->name, ".dwarf"))
+-	  if (!strcmp (p->name, ".stab") || !strcmp (p->name, ".stabstr") || !strcmp(p->name, ".dwarf2"))
 +	  if (amiga_skip_loadfile_section (p->name))
  	    continue;
  
@@ -370,19 +370,15 @@ index 66732528..216cb997 100644
    DPRINT(10,("Did traversing\n"));
    if (symbol_count) /* terminate HUNK_EXT, HUNK_SYMBOL */
      {
-@@ -4177,5 +4317,10 @@ amiga_collect (struct bfd_hash_table *ht, asection * sec)
-       struct ref_section_entry *he;
-       asymbol * sym = &asect->amiga_symbols[j].symbol;
--      if (0 == (sym->flags & (BSF_GLOBAL | BSF_WEAK)))
-+      /* LTO can internalize symbols that are still linker GC roots,
-+	 such as an entry point named with -e.  Let local symbols in
-+	 plugin-generated output satisfy those roots; keep ordinary local
-+	 HUNK symbols private.  */
-+      if (0 == (sym->flags & (BSF_GLOBAL | BSF_WEAK))
-+	  && (sec->owner == NULL || !sec->owner->lto_output))
- 	continue;
- 
-       if (bfd_is_und_section(sym->section) || bfd_is_abs_section(sym->section) || bfd_is_com_section(sym->section))
+@@ -4102,2 +4257,7 @@ amiga_collect (struct bfd_hash_table *ht, asection *sec)
+-          if (!(sym->flags & (BSF_GLOBAL | BSF_WEAK)))
++          /* LTO can internalize symbols that are still linker GC roots,
++	     such as an entry point named with -e.  Let local symbols in
++	     plugin-generated output satisfy those roots; keep ordinary local
++	     HUNK symbols private.  */
++          if (!(sym->flags & (BSF_GLOBAL | BSF_WEAK))
++	      && (sec->owner == NULL || !sec->owner->lto_output))
+             continue;
 diff --git a/bfd/linker.c b/bfd/linker.c
 index d7033944..41b82b21 100644
 --- a/bfd/linker.c
