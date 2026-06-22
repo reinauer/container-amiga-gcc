@@ -62,6 +62,11 @@ RUN NDK=${NDK_VERSION:-$([ "${BUILD_GCC_VERSION}" = "15.2" ] && echo "3.9" || ec
     mkdir -p /opt/amiga-${BUILD_GCC_VERSION} && \
     make branch branch=${BUILD_GCC_BRANCH} mod=gcc && \
     make update NDK=${NDK} && \
+    cmpxf2=projects/libnix/sources/math/math/__cmpxf2.c && \
+    if [ -f "$cmpxf2" ] && ! grep -q 'CODEX_GCC15_LIBNIX_TRUNCXFDF2' "$cmpxf2"; then \
+      perl -0pi -e 's~(/\* convert long double to double \*/\ndouble\n__truncxfdf2)~#if !defined(__GNUC__) || __GNUC__ < 15\n#define CODEX_GCC15_LIBNIX_TRUNCXFDF2 1\n$1~' "$cmpxf2"; \
+      perl -0pi -e 's~(\nextern int __cmpdf2 \(double x1, double x2\);)~\n#endif /* !defined(__GNUC__) || __GNUC__ < 15 */\n$1~' "$cmpxf2"; \
+    fi && \
     if ! grep -q 'CODEX_LIBDEBUG_AFTER_LIBGCC' Makefile; then \
       perl -0pi -e 's@(# libdebug\n)@$1# CODEX_LIBDEBUG_AFTER_LIBGCC\n@' Makefile; \
     fi && \
