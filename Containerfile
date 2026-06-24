@@ -81,6 +81,10 @@ RUN NDK=${NDK_VERSION:-$([ "${BUILD_GCC_VERSION}" = "15.2" ] && echo "3.9" || ec
       LIBDEBUG_DEPS_LINE='$(BUILD)/libdebug/Makefile: $(BUILD)/gcc/_libgcc_done $(BUILD)/libnix/_done $(PROJECTS)/libdebug/configure $(shell find 2>/dev/null $(PROJECTS)/libdebug -not \( -path $(PROJECTS)/libdebug/.git -prune \) -type f)' \
         perl -0pi -e 's@^\$\(BUILD\)/libdebug/Makefile:.*$@$ENV{LIBDEBUG_DEPS_LINE}@m' Makefile; \
     fi && \
+    if ! grep -Fq '$(BUILD)/newlib/newlib/libc.a: $(BUILD)/newlib/newlib/Makefile $(BUILD)/binutils/_gdb' Makefile; then \
+      NEWLIB_DEPS_LINE='$(BUILD)/newlib/newlib/libc.a: $(BUILD)/newlib/newlib/Makefile $(BUILD)/binutils/_gdb $(NEWLIB_FILES)' \
+        perl -0pi -e 's@^\$\(BUILD\)/newlib/newlib/libc\.a:.*$@$ENV{NEWLIB_DEPS_LINE}@m' Makefile; \
+    fi && \
     if [ "${BUILD_AMIGA_LTO}" = "1" ]; then \
       patch --forward --batch -d projects/binutils -p1 -i /root/patches/amiga-lto-binutils.patch && \
       patch --forward --batch -d projects/gcc -p1 -i /root/patches/amiga-lto-gcc.patch && \

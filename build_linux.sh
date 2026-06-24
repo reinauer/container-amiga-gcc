@@ -579,6 +579,24 @@ patch_libdebug_ordering() {
     || die "failed to make libdebug wait for libgcc in ${makefile}"
 }
 
+patch_newlib_binutils_ordering() {
+  local src="$1"
+  local makefile="${src}/Makefile"
+  local deps_line
+
+  [[ -f "$makefile" ]] || return
+
+  deps_line='$(BUILD)/newlib/newlib/libc.a: $(BUILD)/newlib/newlib/Makefile $(BUILD)/binutils/_gdb $(NEWLIB_FILES)'
+
+  if ! grep -Fq '$(BUILD)/newlib/newlib/libc.a: $(BUILD)/newlib/newlib/Makefile $(BUILD)/binutils/_gdb' "$makefile"; then
+    NEWLIB_DEPS_LINE="$deps_line" \
+      perl -0pi -e 's@^\$\(BUILD\)/newlib/newlib/libc\.a:.*$@$ENV{NEWLIB_DEPS_LINE}@m' "$makefile"
+  fi
+
+  grep -Fq '$(BUILD)/newlib/newlib/libc.a: $(BUILD)/newlib/newlib/Makefile $(BUILD)/binutils/_gdb' "$makefile" \
+    || die "failed to make newlib wait for binutils gdb in ${makefile}"
+}
+
 patch_gcc15_libnix_sources() {
   local src="$1"
   local cmpxf2="${src}/projects/libnix/sources/math/math/__cmpxf2.c"
@@ -718,6 +736,7 @@ build_gcc_version() {
   make_amiga "$src" branch branch="$branch" mod=gcc
   make_amiga "$src" update NDK="$ndk"
   patch_libdebug_ordering "$src"
+  patch_newlib_binutils_ordering "$src"
   reset_variant_build_dir "$src" "$prefix"
   patch_gcc15_libnix_sources "$src"
   if [[ "$ENABLE_BEBBO_AMIGA6_PATCHES" -eq 1 && "$branch" == "amiga6" ]]; then
