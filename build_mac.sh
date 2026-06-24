@@ -743,6 +743,23 @@ patch_amiga_lto_sources() {
   rm -f "${gcc_build}/Makefile" "${gcc_build}/_done"
 }
 
+repair_default_libstubs_archive() {
+  local src="$1"
+  local prefix="$2"
+  local build_dir="${src}/build-$(uname -s)-m68k-amigaos"
+  local built="${build_dir}/libnix/lib/libstubs.a"
+  local installed="${prefix}/m68k-amigaos/lib/libstubs.a"
+  local nm="${prefix}/bin/m68k-amigaos-nm"
+  local ranlib="${prefix}/m68k-amigaos/bin/ranlib"
+
+  [[ -f "$built" ]] || die "built libstubs archive missing: ${built}"
+  mkdir -p "$(dirname "$installed")"
+  cp -f "$built" "$installed"
+  "$ranlib" "$installed"
+  "$nm" "$installed" | grep ' _DOSBase$' >/dev/null \
+    || die "repaired libstubs archive does not expose _DOSBase"
+}
+
 patch_bebbo_amiga6_sources() {
   local src="$1"
 
@@ -810,6 +827,7 @@ build_gcc_version() {
     patch_amiga_lto_sources "$src"
   fi
   make_amiga_parallel "$src" all NDK="$ndk" PREFIX="$prefix"
+  repair_default_libstubs_archive "$src" "$prefix"
 
   log "Installing SDKs for GCC ${version}"
   for sdk in "${SDKS[@]}"; do

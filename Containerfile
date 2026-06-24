@@ -118,7 +118,15 @@ RUN NDK=${NDK_VERSION:-3.2} && \
         patch --forward --batch -d projects/gcc -p1 -i "$p"; \
       done; \
     fi && \
-    make -j $(nproc) all NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION}
+    make -j $(nproc) all NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
+    BUILD_DIR="build-$(uname -s)-m68k-amigaos" && \
+    cp -f "${BUILD_DIR}/libnix/lib/libstubs.a" \
+      "/opt/amiga-${BUILD_GCC_VERSION}/m68k-amigaos/lib/libstubs.a" && \
+    "/opt/amiga-${BUILD_GCC_VERSION}/m68k-amigaos/bin/ranlib" \
+      "/opt/amiga-${BUILD_GCC_VERSION}/m68k-amigaos/lib/libstubs.a" && \
+    "/opt/amiga-${BUILD_GCC_VERSION}/bin/m68k-amigaos-nm" \
+      "/opt/amiga-${BUILD_GCC_VERSION}/m68k-amigaos/lib/libstubs.a" \
+      | grep ' _DOSBase$' >/dev/null
 
 # Install all SDKs
 RUN NDK=${NDK_VERSION:-3.2} && \
