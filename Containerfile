@@ -8,7 +8,7 @@ FROM ubuntu:25.10
 ARG BUILD_GCC_BRANCH=amiga6
 ARG BUILD_GCC_VERSION=6.5.0b
 
-# NDK version - defaults to 3.9 for GCC 15.2, 3.2 for others
+# NDK version - defaults to 3.2 for all GCC versions
 ARG NDK_VERSION
 ARG BUILD_AMIGA_LTO=0
 ARG BUILD_BEBBO_AMIGA6_PATCHES=0
@@ -43,7 +43,7 @@ COPY vbcc.diff /root
 COPY patches /root/patches
 
 # Install Bebbo's amiga-gcc
-RUN NDK=${NDK_VERSION:-$([ "${BUILD_GCC_VERSION}" = "15.2" ] && echo "3.9" || echo "3.2")} && \
+RUN NDK=${NDK_VERSION:-3.2} && \
     git config --global pull.rebase false && \
     cd /root && \
     git clone --depth 1 https://github.com/AmigaPorts/m68k-amigaos-gcc amiga-gcc && \
@@ -73,6 +73,11 @@ RUN NDK=${NDK_VERSION:-$([ "${BUILD_GCC_VERSION}" = "15.2" ] && echo "3.9" || ec
     if [ -f "$cmpxf2" ] && ! grep -q 'CODEX_GCC15_LIBNIX_TRUNCXFDF2' "$cmpxf2"; then \
       perl -0pi -e 's~(/\* convert long double to double \*/\ndouble\n__truncxfdf2)~#if !defined(__GNUC__) || __GNUC__ < 15\n#define CODEX_GCC15_LIBNIX_TRUNCXFDF2 1\n$1~' "$cmpxf2"; \
       perl -0pi -e 's~(\nextern int __cmpdf2 \(double x1, double x2\);)~\n#endif /* !defined(__GNUC__) || __GNUC__ < 15 */\n$1~' "$cmpxf2"; \
+    fi && \
+    if patch --reverse --dry-run --force -d projects/libnix -p1 -i /root/patches/libnix-findtooltype-const.patch >/dev/null 2>&1; then \
+      echo "libnix FindToolType patch already applied"; \
+    else \
+      patch --forward --batch -d projects/libnix -p1 -i /root/patches/libnix-findtooltype-const.patch; \
     fi && \
     if [ "${BUILD_GCC_VERSION}" = "16.1" ]; then \
       patch --forward --batch -d projects/gcc -p1 -i /root/patches/gcc16-m68k-mult-cost.patch; \
@@ -115,7 +120,7 @@ RUN NDK=${NDK_VERSION:-$([ "${BUILD_GCC_VERSION}" = "15.2" ] && echo "3.9" || ec
     make -j $(nproc) all NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION}
 
 # Install all SDKs
-RUN NDK=${NDK_VERSION:-$([ "${BUILD_GCC_VERSION}" = "15.2" ] && echo "3.9" || echo "3.2")} && \
+RUN NDK=${NDK_VERSION:-3.2} && \
     cd /root/amiga-gcc && \
     make -j $(nproc) sdk=filesysbox NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
     make -j $(nproc) sdk=sdi NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
@@ -145,7 +150,7 @@ RUN cd /root/amiga-gcc && \
     mv -fv newstyle.h sana2.h sana2specialstats.h /opt/amiga-${BUILD_GCC_VERSION}/m68k-amigaos/ndk-include/devices/
 
 # Build vlink and vbcc
-RUN NDK=${NDK_VERSION:-$([ "${BUILD_GCC_VERSION}" = "15.2" ] && echo "3.9" || echo "3.2")} && \
+RUN NDK=${NDK_VERSION:-3.2} && \
     cd /root/amiga-gcc && \
     patch -p1 < ../vbcc.diff && \
     make -j $(nproc) vlink vbcc NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION}

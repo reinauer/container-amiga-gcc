@@ -5,7 +5,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_URL="https://github.com/AmigaPorts/m68k-amigaos-gcc"
 GCC_REPO_URL="https://github.com/AmigaPorts/gcc"
 NDK_VERSION="3.2"
-NDK_VERSION_EXPLICIT=0
 PREFIX_ROOT="/opt"
 WORKDIR="${SCRIPT_DIR}/.mac-build"
 JOBS=""
@@ -72,12 +71,11 @@ steps as Containerfile.
 Defaults:
   versions:       13.4, 6.5.0b
   prefixes:       /opt/amiga-13.4, /opt/amiga-6.5.0b
-  NDK:            3.2, except 15.2 defaults to 3.9
+  NDK:            3.2
   source workdir: ./.mac-build
 
 Options:
-  --ndk VERSION              NDK version passed to make (default: 3.2;
-                             15.2 defaults to 3.9 unless overridden)
+  --ndk VERSION              NDK version passed to make (default: 3.2)
   --version VERSION[:BRANCH] Build one version; repeat for multiple versions
                              Known versions: 13.4 -> amiga13.4,
                              6.5.0b -> amiga6, 15.2 -> amiga15.2,
@@ -160,7 +158,6 @@ parse_args() {
       --ndk)
         [[ $# -ge 2 ]] || die "--ndk requires a value"
         NDK_VERSION="$2"
-        NDK_VERSION_EXPLICIT=1
         shift 2
         ;;
       --version)
@@ -267,11 +264,8 @@ version_from_spec() {
 
 ndk_for_version() {
   local version="$1"
-  if [[ "$NDK_VERSION_EXPLICIT" -eq 0 && "$version" == "15.2" ]]; then
-    printf '%s\n' "3.9"
-  else
-    printf '%s\n' "$NDK_VERSION"
-  fi
+  : "$version"
+  printf '%s\n' "$NDK_VERSION"
 }
 
 branch_from_spec() {
@@ -649,6 +643,15 @@ patch_gcc15_libnix_sources() {
   fi
 }
 
+patch_libnix_findtooltype_sources() {
+  local src="$1"
+  local libnix_build="${src}/build-$(uname -s)-m68k-amigaos/libnix"
+
+  log "Patching libnix FindToolType const-correctness"
+  apply_patch_file "$src/projects/libnix" "${SCRIPT_DIR}/patches/libnix-findtooltype-const.patch"
+  rm -f "${libnix_build}/_done"
+}
+
 patch_gcc16_sources() {
   local src="$1"
   local gcc_build="${src}/build-$(uname -s)-m68k-amigaos/gcc"
@@ -671,7 +674,7 @@ apply_patch_file() {
 
   if (
     cd "$dir"
-    "$PATCH_BIN" --reverse --dry-run -p1 -i "$patch_file" >/dev/null 2>&1
+    "$PATCH_BIN" --reverse --dry-run --force -p1 -i "$patch_file" >/dev/null 2>&1
   ); then
     log "Patch already applied: ${patch_file}"
     return
@@ -679,7 +682,7 @@ apply_patch_file() {
 
   if (
     cd "$dir"
-    "$PATCH_BIN" --forward --dry-run -p1 -i "$patch_file" >/dev/null 2>&1
+    "$PATCH_BIN" --forward --dry-run --batch -p1 -i "$patch_file" >/dev/null 2>&1
     "$PATCH_BIN" --forward --batch -p1 -i "$patch_file"
   ); then
     return
@@ -793,6 +796,7 @@ build_gcc_version() {
   patch_newlib_binutils_ordering "$src"
   reset_variant_build_dir "$src" "$prefix"
   patch_macos_gcc_sources "$src"
+  patch_libnix_findtooltype_sources "$src"
   patch_gcc15_libnix_sources "$src"
   if [[ "$version" == "16.1" ]]; then
     patch_gcc16_sources "$src"
