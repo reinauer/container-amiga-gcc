@@ -81,7 +81,7 @@ Build Bebbo/AmigaPorts m68k-amigaos-gcc on Ubuntu Linux using the same high-leve
 steps as Containerfile.
 
 Defaults:
-  versions:       13.3, 15.2, 6.5.0b
+  versions:       13.4, 15.2, 6.5.0b
   prefixes:       /opt/amiga-vVERSION-YYYYMMDD
   NDK:            3.2, except 15.2 defaults to 3.9
   source workdir: ./.linux-build
@@ -90,8 +90,9 @@ Options:
   --ndk VERSION              NDK version passed to make (default: 3.2;
                              15.2 defaults to 3.9 unless overridden)
   --version VERSION[:BRANCH] Build one version; repeat for multiple versions
-                             Known versions: 13.3 -> amiga13.3,
-                             6.5.0b -> amiga6, 15.2 -> amiga15.2
+                             Known versions: 13.4 -> amiga13.4,
+                             6.5.0b -> amiga6, 15.2 -> amiga15.2,
+                             16.1 -> amiga16.1
   --prefix-root DIR          Install under DIR/TEMPLATE (default: /opt)
   --prefix DIR               Install a single requested version into DIR
   --prefix-template TEMPLATE Directory name under --prefix-root.
@@ -105,7 +106,8 @@ Options:
   --cc PATH_OR_NAME          Host C compiler (default: prefer gcc-15/gcc)
   --cxx PATH_OR_NAME         Host C++ compiler (default: prefer g++-15/g++)
   --enable-amiga-lto         Apply experimental Amiga HUNK LTO patches and
-                             build binutils with linker plugin support
+                             build binutils with linker plugin support.
+                             Supported for GCC 13.4 and 16.1.
   --enable-bebbo-amiga6-patches
                              Apply selected Bebbo amiga6 GCC backend and
                              optimizer patches on top of AmigaPorts/gcc
@@ -120,10 +122,11 @@ Options:
 Examples:
   ./build_linux.sh
   ./build_linux.sh --date 20260518
-  ./build_linux.sh --ndk 3.9 --version 13.3
-  ./build_linux.sh --version 13.3 --prefix /opt/amiga-13.3-lto --enable-amiga-lto
+  ./build_linux.sh --ndk 3.9 --version 13.4
+  ./build_linux.sh --version 13.4 --prefix /opt/amiga-13.4-lto --enable-amiga-lto
   ./build_linux.sh --version 6.5.0b --enable-bebbo-amiga6-patches
   ./build_linux.sh --cc gcc-12 --cxx g++-12
+  ./build_linux.sh --version 16.1 --prefix /opt/amiga-16.1-lto --enable-amiga-lto
   ./build_linux.sh --version 15.2:amiga15.2 --link-default 15.2
 EOF
 }
@@ -263,7 +266,7 @@ parse_args() {
   done
 
   if [[ ${#VERSION_SPECS[@]} -eq 0 ]]; then
-    VERSION_SPECS=("13.3" "15.2" "6.5.0b")
+    VERSION_SPECS=("13.4" "15.2" "6.5.0b")
   fi
 
   if [[ -n "$PREFIX_OVERRIDE" && ${#VERSION_SPECS[@]} -ne 1 ]]; then
@@ -271,9 +274,13 @@ parse_args() {
   fi
 
   if [[ "$ENABLE_AMIGA_LTO" -eq 1 ]]; then
-    if [[ ${#VERSION_SPECS[@]} -ne 1 || "${VERSION_SPECS[0]%%:*}" != "13.3" ]]; then
-      die "--enable-amiga-lto currently requires exactly --version 13.3"
+    if [[ ${#VERSION_SPECS[@]} -ne 1 ]]; then
+      die "--enable-amiga-lto requires exactly one --version"
     fi
+    case "${VERSION_SPECS[0]%%:*}" in
+      13.4|16.1) ;;
+      *) die "--enable-amiga-lto currently supports --version 13.4 or 16.1" ;;
+    esac
   fi
 
   if [[ "$ENABLE_AMIGA_LTO" -eq 1 && "$ENABLE_BEBBO_AMIGA6_PATCHES" -eq 1 ]]; then
@@ -315,8 +322,9 @@ branch_from_spec() {
   version="$(version_from_spec "$spec")"
   case "$version" in
     6.5.0b) printf '%s\n' "amiga6" ;;
-    13.3) printf '%s\n' "amiga13.3" ;;
+    13.4) printf '%s\n' "amiga13.4" ;;
     15.2) printf '%s\n' "amiga15.2" ;;
+    16.1) printf '%s\n' "amiga16.1" ;;
     *) die "no branch mapping for GCC version ${version}; use --version ${version}:BRANCH" ;;
   esac
 }
@@ -655,6 +663,7 @@ patch_amiga_lto_sources() {
     find "$gcc_build" -name config.cache -type f -exec rm -f {} +
   fi
   rm -f "${binutils_build}/Makefile" "${binutils_build}/_done"
+  rm -f "${gcc_build}/Makefile" "${gcc_build}/_done"
 }
 
 patch_bebbo_amiga6_sources() {

@@ -37,12 +37,14 @@ done
 DOCKER_USER="stefanreinauer"
 IMAGE_NAME="amiga-gcc"
 
-# Define GCC versions and their corresponding branches.  Keep this compatible
-# with macOS /bin/bash 3.2, which does not support associative arrays.
+# Define GCC versions, branches, and whether to enable Amiga LTO.  Keep this
+# compatible with macOS /bin/bash 3.2, which does not support associative
+# arrays.
 GCC_VERSION_SPECS=(
-    "6.5.0b:amiga6"
-    "13.3:amiga13.3"
-    "15.2:amiga15.2"
+    "6.5.0b:amiga6:0"
+    "13.4:amiga13.4:1"
+    "15.2:amiga15.2:0"
+    "16.1:amiga16.1:1"
 )
 
 
@@ -96,10 +98,12 @@ EXTRA=$(cat .extra 2>/dev/null)
 # --- Build and push each GCC version ---
 for GCC_VERSION_SPEC in "${GCC_VERSION_SPECS[@]}"; do
     GCC_VERSION="${GCC_VERSION_SPEC%%:*}"
-    GCC_BRANCH="${GCC_VERSION_SPEC#*:}"
+    GCC_REST="${GCC_VERSION_SPEC#*:}"
+    GCC_BRANCH="${GCC_REST%%:*}"
+    BUILD_AMIGA_LTO="${GCC_REST#*:}"
 
     echo "========================================"
-    echo "Building GCC ${GCC_VERSION} (branch: ${GCC_BRANCH})"
+    echo "Building GCC ${GCC_VERSION} (branch: ${GCC_BRANCH}, LTO: ${BUILD_AMIGA_LTO})"
     echo "========================================"
     echo
 
@@ -109,7 +113,7 @@ for GCC_VERSION_SPEC in "${GCC_VERSION_SPECS[@]}"; do
     TAG_GCC_VERSION_DATE="${DOCKER_USER}/${IMAGE_NAME}:gcc-v${GCC_VERSION}-${DATE}${EXTRA}"
 
     # Build with build arguments
-    CMD_BUILD="docker build --build-arg BUILD_GCC_BRANCH=${GCC_BRANCH} --build-arg BUILD_GCC_VERSION=${GCC_VERSION} -t ${LOCAL_TAG} ."
+    CMD_BUILD="docker build --build-arg BUILD_GCC_BRANCH=${GCC_BRANCH} --build-arg BUILD_GCC_VERSION=${GCC_VERSION} --build-arg BUILD_AMIGA_LTO=${BUILD_AMIGA_LTO} -t ${LOCAL_TAG} ."
     CMD_TAG_VERSION="docker tag ${LOCAL_TAG} ${TAG_GCC_VERSION}"
     CMD_TAG_VERSION_DATE="docker tag ${LOCAL_TAG} ${TAG_GCC_VERSION_DATE}"
     CMD_PUSH_VERSION="docker push ${TAG_GCC_VERSION}"
@@ -125,8 +129,9 @@ for GCC_VERSION_SPEC in "${GCC_VERSION_SPECS[@]}"; do
     echo
 done
 
-#LATEST="13.3"
+#LATEST="13.4"
 #LATEST="15.2"
+#LATEST="16.1"
 LATEST="6.5.0b"
 
 # Optionally tag one of the currently built GCC versions as 'latest'

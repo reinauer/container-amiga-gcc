@@ -1,8 +1,10 @@
 FROM ubuntu:25.10
 
 # Build arguments for configurable GCC branch
-#ARG BUILD_GCC_BRANCH=amiga13.3
-#ARG BUILD_GCC_VERSION=13.3
+#ARG BUILD_GCC_BRANCH=amiga13.4
+#ARG BUILD_GCC_VERSION=13.4
+#ARG BUILD_GCC_BRANCH=amiga16.1
+#ARG BUILD_GCC_VERSION=16.1
 ARG BUILD_GCC_BRANCH=amiga6
 ARG BUILD_GCC_VERSION=6.5.0b
 
@@ -46,9 +48,14 @@ RUN NDK=${NDK_VERSION:-$([ "${BUILD_GCC_VERSION}" = "15.2" ] && echo "3.9" || ec
     cd /root && \
     git clone --depth 1 https://github.com/AmigaPorts/m68k-amigaos-gcc amiga-gcc && \
     cd /root/amiga-gcc && \
-    if [ "${BUILD_AMIGA_LTO}" = "1" ] && [ "${BUILD_GCC_VERSION}" != "13.3" ]; then \
-      echo "BUILD_AMIGA_LTO=1 currently requires BUILD_GCC_VERSION=13.3" >&2; \
-      exit 1; \
+    if [ "${BUILD_AMIGA_LTO}" = "1" ]; then \
+      case "${BUILD_GCC_VERSION}" in \
+        13.4|16.1) ;; \
+        *) \
+          echo "BUILD_AMIGA_LTO=1 currently requires BUILD_GCC_VERSION=13.4 or 16.1" >&2; \
+          exit 1; \
+          ;; \
+      esac; \
     fi && \
     if [ "${BUILD_AMIGA_LTO}" = "1" ] && [ "${BUILD_BEBBO_AMIGA6_PATCHES}" = "1" ]; then \
       echo "BUILD_AMIGA_LTO=1 and BUILD_BEBBO_AMIGA6_PATCHES=1 cannot be combined" >&2; \
@@ -86,7 +93,8 @@ RUN NDK=${NDK_VERSION:-$([ "${BUILD_GCC_VERSION}" = "15.2" ] && echo "3.9" || ec
       if [ -d "${BUILD_DIR}/gcc" ]; then \
         find "${BUILD_DIR}/gcc" -name config.cache -type f -delete; \
       fi && \
-      rm -f "${BUILD_DIR}/binutils/Makefile" "${BUILD_DIR}/binutils/_done"; \
+      rm -f "${BUILD_DIR}/binutils/Makefile" "${BUILD_DIR}/binutils/_done" && \
+      rm -f "${BUILD_DIR}/gcc/Makefile" "${BUILD_DIR}/gcc/_done"; \
     fi && \
     if [ "${BUILD_BEBBO_AMIGA6_PATCHES}" = "1" ]; then \
       for p in /root/patches/bebbo-amiga6/*.patch; do \
