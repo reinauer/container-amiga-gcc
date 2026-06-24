@@ -74,6 +74,9 @@ RUN NDK=${NDK_VERSION:-$([ "${BUILD_GCC_VERSION}" = "15.2" ] && echo "3.9" || ec
       perl -0pi -e 's~(/\* convert long double to double \*/\ndouble\n__truncxfdf2)~#if !defined(__GNUC__) || __GNUC__ < 15\n#define CODEX_GCC15_LIBNIX_TRUNCXFDF2 1\n$1~' "$cmpxf2"; \
       perl -0pi -e 's~(\nextern int __cmpdf2 \(double x1, double x2\);)~\n#endif /* !defined(__GNUC__) || __GNUC__ < 15 */\n$1~' "$cmpxf2"; \
     fi && \
+    if [ "${BUILD_GCC_VERSION}" = "16.1" ]; then \
+      patch --forward --batch -d projects/gcc -p1 -i /root/patches/gcc16-m68k-mult-cost.patch; \
+    fi && \
     if ! grep -q 'CODEX_LIBDEBUG_AFTER_LIBGCC' Makefile; then \
       perl -0pi -e 's@(# libdebug\n)@$1# CODEX_LIBDEBUG_AFTER_LIBGCC\n@' Makefile; \
     fi && \

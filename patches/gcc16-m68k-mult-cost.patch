@@ -1,0 +1,23 @@
+diff --git a/gcc/config/m68k/m68k_68000_10_costs.cc b/gcc/config/m68k/m68k_68000_10_costs.cc
+index 1e23ed624..ab44c9974 100644
+--- a/gcc/config/m68k/m68k_68000_10_costs.cc
++++ b/gcc/config/m68k/m68k_68000_10_costs.cc
+@@ -278,2 +278,4 @@ m68k_68000_10_costs_table (rtx x,
+-            HOST_WIDE_INT p = 1;
+-            int shift = 0;
++            unsigned HOST_WIDE_INT abs_n
++              = n < 0 ? -(unsigned HOST_WIDE_INT) n
++                      : (unsigned HOST_WIDE_INT) n;
++            int shift = exact_log2 (abs_n);
+@@ -281,10 +283 @@ m68k_68000_10_costs_table (rtx x,
+-            if (n < 0)
+-              n = -n;
+-
+-            while (p < n)
+-              {
+-                p <<= 1;
+-                shift++;
+-              }
+-
+-            if (p == n)
++            if (shift >= 0)

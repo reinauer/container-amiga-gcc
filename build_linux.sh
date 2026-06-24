@@ -608,6 +608,19 @@ patch_gcc15_libnix_sources() {
   fi
 }
 
+patch_gcc16_sources() {
+  local src="$1"
+  local gcc_build="${src}/build-$(uname -s)-m68k-amigaos/gcc"
+
+  log "Patching GCC 16 m68k multiply cost overflow"
+  apply_patch_file "$src/projects/gcc" "${SCRIPT_DIR}/patches/gcc16-m68k-mult-cost.patch"
+
+  if [[ -d "$gcc_build" ]]; then
+    find "$gcc_build" -name config.cache -type f -exec rm -f {} +
+  fi
+  rm -f "${gcc_build}/Makefile" "${gcc_build}/_done"
+}
+
 apply_patch_file() {
   local dir="$1"
   local patch_file="$2"
@@ -739,6 +752,9 @@ build_gcc_version() {
   patch_newlib_binutils_ordering "$src"
   reset_variant_build_dir "$src" "$prefix"
   patch_gcc15_libnix_sources "$src"
+  if [[ "$version" == "16.1" ]]; then
+    patch_gcc16_sources "$src"
+  fi
   if [[ "$ENABLE_BEBBO_AMIGA6_PATCHES" -eq 1 && "$branch" == "amiga6" ]]; then
     patch_bebbo_amiga6_sources "$src"
   fi
