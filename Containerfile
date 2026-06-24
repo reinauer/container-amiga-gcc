@@ -81,6 +81,7 @@ RUN NDK=${NDK_VERSION:-3.2} && \
     fi && \
     if [ "${BUILD_GCC_VERSION}" = "16.1" ]; then \
       patch --forward --batch -d projects/gcc -p1 -i /root/patches/gcc16-m68k-mult-cost.patch; \
+      patch --forward --batch -d projects/gcc -p1 -i /root/patches/gcc16-amigaos-no-statvfs.patch; \
     fi && \
     if ! grep -q 'CODEX_LIBDEBUG_AFTER_LIBGCC' Makefile; then \
       perl -0pi -e 's@(# libdebug\n)@$1# CODEX_LIBDEBUG_AFTER_LIBGCC\n@' Makefile; \

@@ -658,6 +658,8 @@ patch_gcc16_sources() {
 
   log "Patching GCC 16 m68k multiply cost overflow"
   apply_patch_file "$src/projects/gcc" "${SCRIPT_DIR}/patches/gcc16-m68k-mult-cost.patch"
+  log "Patching GCC 16 libstdc++ statvfs detection for AmigaOS"
+  apply_patch_file "$src/projects/gcc" "${SCRIPT_DIR}/patches/gcc16-amigaos-no-statvfs.patch"
 
   if [[ -d "$gcc_build" ]]; then
     find "$gcc_build" -name config.cache -type f -exec rm -f {} +

@@ -1,0 +1,19 @@
+diff --git a/libstdc++-v3/src/filesystem/ops-common.h b/libstdc++-v3/src/filesystem/ops-common.h
+index 67d5e20f7..0bc3da3e3 100644
+--- a/libstdc++-v3/src/filesystem/ops-common.h
++++ b/libstdc++-v3/src/filesystem/ops-common.h
+@@ -40,6 +40,14 @@
+ # endif
+ #endif
+ 
++// AmigaOS newlib provides <sys/statvfs.h> with struct statvfs, but does not
++// declare a statvfs() function.  The libstdc++ configure test only checks
++// for the header, so keep std::filesystem::space on the unsupported fallback.
++#if defined(__amigaos__) && defined(_GLIBCXX_HAVE_SYS_STATVFS_H)
++# undef _GLIBCXX_HAVE_SYS_STATVFS_H
++# define _GLIBCXX_AMIGAOS_NO_STATVFS 1
++#endif
++
+ #ifdef _GLIBCXX_FILESYSTEM_IS_WINDOWS
+ # include <wchar.h>
+ #endif
