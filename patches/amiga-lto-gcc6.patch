@@ -1,0 +1,360 @@
+diff --git a/gcc/config/m68k/m68kamigaos.h b/gcc/config/m68k/m68kamigaos.h
+index 3f982a1e3..69df1d817 100644
+--- a/gcc/config/m68k/m68kamigaos.h
++++ b/gcc/config/m68k/m68kamigaos.h
+@@ -543,14 +543,13 @@ if (target_flags & (MASK_RESTORE_A4|MASK_ALWAYS_RESTORE_A4)) \
+     "%{!MM:" \
+       "%{!E:" \
+         "%{!S:" \
+-          "%(linker) -Cvbcc %l %X %{o*} %{A} %{d} %{e*} %{m} " \
++          "%(linker) " LINK_PLUGIN_SPEC "-Cvbcc %l %X %{o*} %{A} %{d} %{e*} %{m} " \
+           "%{N} %{n} %{r} %{s} %{t} %{u*} %{x} %{z} %{Z} " \
+           "%{!A:%{!nostdlib:%{!nostartfiles:%S}}} " \
+           "%{static:} %{L*} %F %o " \
+           "%{!nostdlib:%{!nodefaultlibs:%L}} " \
+           "%{!A:%{!nostdlib:%{!nostartfiles:%E}}} " \
+           "%{!nostdlib:%{!nodefaultlibs:%G}} " \
+-          "%{flto} " \
+           "%{T*} }}}}}} "
+ #else
+ #define LINK_COMMAND_SPEC \
+@@ -562,14 +561,13 @@ if (target_flags & (MASK_RESTORE_A4|MASK_ALWAYS_RESTORE_A4)) \
+     "%{!MM:" \
+       "%{!E:" \
+         "%{!S:" \
+-          "%(linker) %l %X %{o*} %{A} %{d} %{e*} %{m} " \
++          "%(linker) " LINK_PLUGIN_SPEC "%l %X %{o*} %{A} %{d} %{e*} %{m} " \
+           "%{N} %{n} %{r} %{s} %{t} %{u*} %{x} %{z} %{Z} " \
+           "%{!A:%{!nostdlib:%{!nostartfiles:%S}}} " \
+           "%{static:} %{L*} %F -L%:sdk_root(lib/) -L%:sdk_root(../lib/) %o " \
+           "%{!nostdlib:%{!nodefaultlibs:%L}} " \
+           "%{!A:%{!nostdlib:%{!nostartfiles:%E}}} " \
+           "%{!nostdlib:%{!nodefaultlibs:%G}} " \
+-              "%{flto} " \
+           "%{T*} }}}}}} "
+ #endif
+ 
+diff --git a/gcc/gcc.c b/gcc/gcc.c
+index 586f40df0..f151b2fc8 100644
+--- a/gcc/gcc.c
++++ b/gcc/gcc.c
+@@ -353,6 +353,7 @@ static const char *eval_spec_function (const char *, const char *);
+ static const char *handle_spec_function (const char *, bool *);
+ static char *save_string (const char *, int);
+ static void set_collect_gcc_options (void);
++static void putenv_COLLECT_AS_OPTIONS (vec<char *>);
+ static int do_spec_1 (const char *, int, const char *);
+ static int do_spec_2 (const char *);
+ static void do_option_spec (const char *, const char *);
+@@ -4652,6 +4653,44 @@ set_collect_gcc_options (void)
+   obstack_grow (&collect_obstack, "\0", 1);
+   xputenv (XOBFINISH (&collect_obstack, char *));
+ }
++
++/* Add options passed via -Xassembler or -Wa to COLLECT_AS_OPTIONS.  */
++
++static void
++putenv_COLLECT_AS_OPTIONS (vec<char_p> vec)
++{
++  unsigned ix;
++  char *opt;
++
++  if (vec.is_empty ())
++    return;
++
++  obstack_init (&collect_obstack);
++  obstack_grow (&collect_obstack, "COLLECT_AS_OPTIONS=",
++		sizeof ("COLLECT_AS_OPTIONS=") - 1);
++
++  FOR_EACH_VEC_ELT (vec, ix, opt)
++    {
++      const char *p, *q;
++
++      obstack_grow (&collect_obstack, "'", 1);
++      q = opt;
++      while ((p = strchr (q, '\'')))
++	{
++	  obstack_grow (&collect_obstack, q, p - q);
++	  obstack_grow (&collect_obstack, "'\\''", 4);
++	  q = ++p;
++	}
++      obstack_grow (&collect_obstack, q, strlen (q));
++      obstack_grow (&collect_obstack, "'", 1);
++
++      if (ix < vec.length () - 1)
++	obstack_grow (&collect_obstack, " ", 1);
++    }
++
++  obstack_grow (&collect_obstack, "\0", 1);
++  xputenv (XOBFINISH (&collect_obstack, char *));
++}
+ 
+ /* Process a spec string, accumulating and running commands.  */
+ 
+@@ -7210,6 +7249,7 @@ driver::main (int argc, char **argv)
+   global_initializations ();
+   build_multilib_strings ();
+   set_up_specs ();
++  putenv_COLLECT_AS_OPTIONS (assembler_options);
+   putenv_COLLECT_GCC (argv[0]);
+   maybe_putenv_COLLECT_LTO_WRAPPER ();
+   maybe_putenv_OFFLOAD_TARGETS ();
+diff --git a/gcc/lto-opts.c b/gcc/lto-opts.c
+index 5f4b4274e..a00647cd3 100644
+--- a/gcc/lto-opts.c
++++ b/gcc/lto-opts.c
+@@ -54,6 +54,50 @@ append_to_collect_gcc_options (struct obstack *ob,
+   *first_p = false;
+ }
+ 
++/* Append each assembler option from COLLECT_AS_OPTIONS as
++   "-Xassembler <option>" for LTRANS.  */
++
++static void
++append_collect_as_options (const char *collect_as_options,
++			   struct obstack *ob, bool *first_p)
++{
++  char *argv_storage;
++  int j, k;
++
++  argv_storage = xstrdup (collect_as_options);
++
++  for (j = 0, k = 0; argv_storage[j] != '\0'; ++j)
++    {
++      if (argv_storage[j] == '\'')
++	{
++	  char *option = &argv_storage[k];
++
++	  ++j;
++	  do
++	    {
++	      if (argv_storage[j] == '\0')
++		fatal_error (input_location, "malformed COLLECT_AS_OPTIONS");
++	      else if (strncmp (&argv_storage[j], "'\\''", 4) == 0)
++		{
++		  argv_storage[k++] = '\'';
++		  j += 4;
++		}
++	      else if (argv_storage[j] == '\'')
++		break;
++	      else
++		argv_storage[k++] = argv_storage[j++];
++	    }
++	  while (1);
++	  argv_storage[k++] = '\0';
++
++	  append_to_collect_gcc_options (ob, first_p, "-Xassembler");
++	  append_to_collect_gcc_options (ob, first_p, option);
++	}
++    }
++
++  free (argv_storage);
++}
++
+ /* Write currently held options to an LTO IL section.  */
+ 
+ void
+@@ -208,6 +252,11 @@ lto_write_options (void)
+ 	append_to_collect_gcc_options (&temporary_obstack, &first_p,
+ 				       option->canonical_option[j]);
+     }
++
++  if (const char *collect_as_options = getenv ("COLLECT_AS_OPTIONS"))
++    append_collect_as_options (collect_as_options, &temporary_obstack,
++			       &first_p);
++
+   obstack_grow (&temporary_obstack, "\0", 1);
+   args = XOBFINISH (&temporary_obstack, char *);
+   lto_write_data (args, strlen (args) + 1);
+diff --git a/gcc/lto-wrapper.c b/gcc/lto-wrapper.c
+index c4237ea2a..8c2f41bb3 100644
+--- a/gcc/lto-wrapper.c
++++ b/gcc/lto-wrapper.c
+@@ -532,6 +532,9 @@ append_compiler_options (obstack *argv_obstack, struct cl_decoded_option *opts,
+ 	case OPT_fcheck_pointer_bounds:
+ 	  break;
+ 
++	case OPT_Xassembler:
++	  break;
++
+ 	default:
+ 	  if (!(cl_options[option->opt_index].flags & CL_TARGET))
+ 	    continue;
+diff --git a/libiberty/simple-object-amigahunk.c b/libiberty/simple-object-amigahunk.c
+index 5808686cc..0e821036c 100644
+--- a/libiberty/simple-object-amigahunk.c
++++ b/libiberty/simple-object-amigahunk.c
+@@ -46,6 +46,9 @@
+ 
+ #include "simple-object-common.h"
+ 
++#define AMIGA_LTO_DEBUG_MAGIC 0x4c544f31 /* "LTO1" */
++#define AMIGA_LTO_DEBUG_HEADER_SIZE 8
++
+ /**
+  * all info needed to find hunks aka sections.
+  */
+@@ -129,6 +132,89 @@ readName (unsigned l, int descriptor, off_t * offset)
+   return r;
+ }
+ 
++static unsigned
++fetch4 (const unsigned char *b)
++{
++  return (b[0] << 24) | (b[1] << 16) | (b[2] << 8) | b[3];
++}
++
++static int
++is_lto_section (const char *section_name)
++{
++  return strncmp (section_name, ".gnu.lto", 8) == 0;
++}
++
++static int
++is_padded_lto_section (const char *section_name)
++{
++  if (!is_lto_section (section_name))
++    return 0;
++
++  if (strcmp (section_name, ".gnu.lto_.opts") == 0)
++    return 0;
++
++  if (strncmp (section_name, ".gnu.lto_.symtab", 16) == 0
++      || strncmp (section_name, ".gnu.lto_.ext_symtab", 20) == 0
++      || strncmp (section_name, ".gnu.lto_.lto", 13) == 0)
++    return 0;
++
++  return 1;
++}
++
++static int
++read_lto_header (int descriptor, off_t *offset, unsigned *length)
++{
++  unsigned char header[AMIGA_LTO_DEBUG_HEADER_SIZE];
++  const char *errmsg;
++  int err;
++  unsigned magic;
++  unsigned payload_length;
++
++  if (*length < AMIGA_LTO_DEBUG_HEADER_SIZE)
++    return 0;
++
++  if (!simple_object_internal_read (descriptor, *offset, header,
++				    sizeof (header), &errmsg, &err))
++    return 0;
++
++  magic = fetch4 (header);
++  if (magic != AMIGA_LTO_DEBUG_MAGIC)
++    return 0;
++
++  payload_length = fetch4 (header + 4);
++  if (payload_length > *length - AMIGA_LTO_DEBUG_HEADER_SIZE)
++    return 0;
++
++  *offset += AMIGA_LTO_DEBUG_HEADER_SIZE;
++  *length = payload_length;
++  return 1;
++}
++
++static unsigned
++trim_lto_padding (int descriptor, off_t offset, unsigned length)
++{
++  unsigned char buffer[3];
++  const char *errmsg;
++  int err;
++  unsigned count;
++
++  if (length == 0)
++    return length;
++
++  count = length < sizeof (buffer) ? length : sizeof (buffer);
++  if (!simple_object_internal_read (descriptor, offset + length - count,
++				    buffer, count, &errmsg, &err))
++    return length;
++
++  while (count != 0 && buffer[count - 1] == 0)
++    {
++      --count;
++      --length;
++    }
++
++  return length;
++}
++
+ /* See if we have an Amiga file.
+  * Also remember all hunks.
+  */
+@@ -187,6 +273,20 @@ simple_object_amigahunk_match (
+ 	  offset += 4;
+ 	  h->length = read4 (descriptor, &offset) * 4;
+ 	  h->offset = offset;
++	  if (is_lto_section (h->name))
++	    {
++	      off_t lto_offset = h->offset;
++	      unsigned lto_length = h->length;
++
++	      if (read_lto_header (descriptor, &lto_offset, &lto_length))
++		{
++		  h->offset = lto_offset;
++		  h->length = lto_length;
++		}
++	      else if (is_padded_lto_section (h->name))
++		h->length = trim_lto_padding (descriptor, h->offset,
++					      h->length);
++	    }
+ 	  offset -= 8;
+ 
+ 	  oar->root = h;
+@@ -501,10 +601,14 @@ simple_object_amigahunk_write_to_file (simple_object_write *sobj,
+       // collect data len
+       struct simple_object_write_section_buffer * sb;
+       size_t slen = 0;
++      size_t lto_header_size = 0;
+       for (sb = section->buffers; sb; sb = sb->next)
+ 	slen += sb->size;
+ 
+-      unsigned len = (slen + 3) >> 2;
++      if (is_lto_section (section->name))
++	lto_header_size = AMIGA_LTO_DEBUG_HEADER_SIZE;
++
++      unsigned len = (slen + lto_header_size + 3) >> 2;
+       unsigned char b[4];
+       b[3] = len;
+       b[2] = len >> 8;
+@@ -517,6 +621,27 @@ simple_object_amigahunk_write_to_file (simple_object_write *sobj,
+ 
+       offset += 4;
+ 
++      if (lto_header_size)
++	{
++	  b[3] = AMIGA_LTO_DEBUG_MAGIC;
++	  b[2] = AMIGA_LTO_DEBUG_MAGIC >> 8;
++	  b[1] = AMIGA_LTO_DEBUG_MAGIC >> 16;
++	  b[0] = AMIGA_LTO_DEBUG_MAGIC >> 24;
++	  if (!simple_object_internal_write (descriptor, offset, b, 4,
++					     &errmsg, err))
++	    return 0;
++	  offset += 4;
++
++	  b[3] = slen;
++	  b[2] = slen >> 8;
++	  b[1] = slen >> 16;
++	  b[0] = slen >> 24;
++	  if (!simple_object_internal_write (descriptor, offset, b, 4,
++					     &errmsg, err))
++	    return 0;
++	  offset += 4;
++	}
++
+       // write data
+       for (sb = section->buffers; sb; sb = sb->next)
+ 	{
+@@ -528,7 +653,7 @@ simple_object_amigahunk_write_to_file (simple_object_write *sobj,
+ 	}
+ 
+       // pad
+-      slen = (len << 2) - slen;
++      slen = (len << 2) - slen - lto_header_size;
+       if (slen)
+ 	{
+ 	  b[1] = 0;

@@ -105,7 +105,7 @@ Options:
   --cxx PATH_OR_NAME         Host C++ compiler (default: prefer g++-15/g++)
   --enable-amiga-lto         Apply experimental Amiga HUNK LTO patches and
                              build binutils with linker plugin support.
-                             Supported for GCC 13.4 and 16.1.
+                             Supported for GCC 6.5.0b, 13.4, and 16.1.
   --enable-bebbo-amiga6-patches
                              Apply selected Bebbo amiga6 GCC backend and
                              optimizer patches on top of AmigaPorts/gcc
@@ -275,8 +275,8 @@ parse_args() {
       die "--enable-amiga-lto requires exactly one --version"
     fi
     case "${VERSION_SPECS[0]%%:*}" in
-      13.4|16.1) ;;
-      *) die "--enable-amiga-lto currently supports --version 13.4 or 16.1" ;;
+      6.5.0b|13.4|16.1) ;;
+      *) die "--enable-amiga-lto currently supports --version 6.5.0b, 13.4, or 16.1" ;;
     esac
   fi
 
@@ -677,13 +677,19 @@ apply_patch_dir() {
 
 patch_amiga_lto_sources() {
   local src="$1"
+  local version="$2"
   local makefile="${src}/Makefile"
   local binutils_build="${src}/build-$(uname -s)-m68k-amigaos/binutils"
   local gcc_build="${src}/build-$(uname -s)-m68k-amigaos/gcc"
+  local binutils_patch="${SCRIPT_DIR}/patches/amiga-lto-binutils.patch"
+  local gcc_patch="${SCRIPT_DIR}/patches/amiga-lto-gcc.patch"
 
   log "Patching Amiga HUNK LTO support"
-  apply_patch_file "$src/projects/binutils" "${SCRIPT_DIR}/patches/amiga-lto-binutils.patch"
-  apply_patch_file "$src/projects/gcc" "${SCRIPT_DIR}/patches/amiga-lto-gcc.patch"
+  if [[ "$version" == "6.5.0b" ]]; then
+    gcc_patch="${SCRIPT_DIR}/patches/amiga-lto-gcc6.patch"
+  fi
+  apply_patch_file "$src/projects/binutils" "$binutils_patch"
+  apply_patch_file "$src/projects/gcc" "$gcc_patch"
 
   if [[ -f "$makefile" ]] && ! grep -q 'CODEX_AMIGA_LTO_PLUGINS' "$makefile"; then
     perl -0pi -e 's@ifneq \(m68k-elf,\$\(TARGET\)\)\nCONFIG_BINUTILS \+= --disable-plugins\nendif\n@CONFIG_BINUTILS += --enable-plugins # CODEX_AMIGA_LTO_PLUGINS\n@' "$makefile"
@@ -782,7 +788,7 @@ build_gcc_version() {
     patch_bebbo_amiga6_sources "$src"
   fi
   if [[ "$ENABLE_AMIGA_LTO" -eq 1 ]]; then
-    patch_amiga_lto_sources "$src"
+    patch_amiga_lto_sources "$src" "$version"
   fi
   make_amiga_parallel "$src" all NDK="$ndk" PREFIX="$prefix"
   repair_default_libstubs_archive "$src" "$prefix"

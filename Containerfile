@@ -50,9 +50,9 @@ RUN NDK=${NDK_VERSION:-3.2} && \
     cd /root/amiga-gcc && \
     if [ "${BUILD_AMIGA_LTO}" = "1" ]; then \
       case "${BUILD_GCC_VERSION}" in \
-        13.4|16.1) ;; \
+        6.5.0b|13.4|16.1) ;; \
         *) \
-          echo "BUILD_AMIGA_LTO=1 currently requires BUILD_GCC_VERSION=13.4 or 16.1" >&2; \
+          echo "BUILD_AMIGA_LTO=1 currently requires BUILD_GCC_VERSION=6.5.0b, 13.4, or 16.1" >&2; \
           exit 1; \
           ;; \
       esac; \
@@ -96,7 +96,11 @@ RUN NDK=${NDK_VERSION:-3.2} && \
     fi && \
     if [ "${BUILD_AMIGA_LTO}" = "1" ]; then \
       patch --forward --batch -d projects/binutils -p1 -i /root/patches/amiga-lto-binutils.patch && \
-      patch --forward --batch -d projects/gcc -p1 -i /root/patches/amiga-lto-gcc.patch && \
+      if [ "${BUILD_GCC_VERSION}" = "6.5.0b" ]; then \
+        patch --forward --batch -d projects/gcc -p1 -i /root/patches/amiga-lto-gcc6.patch; \
+      else \
+        patch --forward --batch -d projects/gcc -p1 -i /root/patches/amiga-lto-gcc.patch; \
+      fi && \
       perl -0pi -e 's@ifneq \(m68k-elf,\$\(TARGET\)\)\nCONFIG_BINUTILS \+= --disable-plugins\nendif\n@CONFIG_BINUTILS += --enable-plugins # CODEX_AMIGA_LTO_PLUGINS\n@' Makefile && \
       grep -q 'CODEX_AMIGA_LTO_PLUGINS' Makefile && \
       BUILD_DIR="build-$(uname -s)-m68k-amigaos" && \
