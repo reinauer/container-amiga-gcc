@@ -611,14 +611,65 @@ patch_libnix_findtooltype_sources() {
   rm -f "${libnix_build}/_done"
 }
 
+patch_libnix_archive_sources() {
+  local src="$1"
+  local libnix_build="${src}/build-$(uname -s)-m68k-amigaos/libnix"
+
+  log "Patching libnix archive target selection"
+  apply_patch_file "$src/projects/libnix" "${SCRIPT_DIR}/patches/libnix-amigaos-ar-target.patch"
+  rm -f "${libnix_build}/_done"
+}
+
+patch_libnix_link_sources() {
+  local src="$1"
+  local libnix_build="${src}/build-$(uname -s)-m68k-amigaos/libnix"
+
+  log "Patching libnix4 linker plugin use"
+  apply_patch_file "$src/projects/libnix" "${SCRIPT_DIR}/patches/libnix-libnix4-no-linker-plugin.patch"
+  rm -f "${libnix_build}/_done" "${libnix_build}/libb/libnix4.library"
+}
+
+patch_amiga_statvfs_sources() {
+  local src="$1"
+  local build_dir="${src}/build-$(uname -s)-m68k-amigaos"
+  local gcc_build="${build_dir}/gcc"
+
+  log "Patching AmigaOS statvfs support"
+  apply_patch_file "$src/projects/newlib-cygwin" "${SCRIPT_DIR}/patches/newlib-amigaos-statvfs.patch"
+  apply_patch_file "$src/projects/libnix" "${SCRIPT_DIR}/patches/libnix-amigaos-statvfs.patch"
+
+  rm -f "${build_dir}/newlib/_done" "${build_dir}/newlib/newlib/libc.a"
+  rm -f "${build_dir}/libnix/_done"
+  if [[ -d "$gcc_build" ]]; then
+    find "$gcc_build" -name config.cache -type f -exec rm -f {} +
+  fi
+  rm -f "${gcc_build}/Makefile" "${gcc_build}/_done"
+}
+
+patch_filesysbox_statvfs_sources() {
+  local src="$1"
+  local filesysbox="${src}/projects/filesysbox"
+  local build_filesysbox="${src}/build/filesysbox"
+
+  if [[ ! -d "${filesysbox}/.git" ]]; then
+    log "Cloning filesysbox SDK source"
+    git clone --branch V54.7 --single-branch https://github.com/salass00/filesysbox "$filesysbox"
+  fi
+
+  log "Patching filesysbox statvfs prototype"
+  apply_patch_file "$filesysbox" "${SCRIPT_DIR}/patches/filesysbox-statvfs-prototype.patch"
+
+  if [[ -d "$build_filesysbox" ]]; then
+    safe_remove_source "$build_filesysbox"
+  fi
+}
+
 patch_gcc16_sources() {
   local src="$1"
   local gcc_build="${src}/build-$(uname -s)-m68k-amigaos/gcc"
 
   log "Patching GCC 16 m68k multiply cost overflow"
   apply_patch_file "$src/projects/gcc" "${SCRIPT_DIR}/patches/gcc16-m68k-mult-cost.patch"
-  log "Patching GCC 16 libstdc++ statvfs detection for AmigaOS"
-  apply_patch_file "$src/projects/gcc" "${SCRIPT_DIR}/patches/gcc16-amigaos-no-statvfs.patch"
 
   if [[ -d "$gcc_build" ]]; then
     find "$gcc_build" -name config.cache -type f -exec rm -f {} +
@@ -629,16 +680,22 @@ patch_gcc16_sources() {
 apply_patch_file() {
   local dir="$1"
   local patch_file="$2"
+  local reverse_output
 
   [[ -d "$dir" ]] || die "patch directory does not exist: ${dir}"
   [[ -f "$patch_file" ]] || die "missing patch file: ${patch_file}"
 
-  if (
+  if reverse_output="$(
     cd "$dir"
-    "$PATCH_BIN" --reverse --dry-run --force -p1 -i "$patch_file" >/dev/null 2>&1
-  ); then
-    log "Patch already applied: ${patch_file}"
-    return
+    "$PATCH_BIN" --reverse --dry-run --batch -p1 -i "$patch_file" 2>&1
+  )"; then
+    case "$reverse_output" in
+      *"Ignoring -R"*|*"Unreversed"*) ;;
+      *)
+        log "Patch already applied: ${patch_file}"
+        return
+        ;;
+    esac
   fi
 
   if (
@@ -708,21 +765,18 @@ patch_amiga_lto_sources() {
   rm -f "${gcc_build}/Makefile" "${gcc_build}/_done"
 }
 
-repair_default_libstubs_archive() {
-  local src="$1"
-  local prefix="$2"
-  local build_dir="${src}/build-$(uname -s)-m68k-amigaos"
-  local built="${build_dir}/libnix/lib/libstubs.a"
+verify_default_libstubs_archive() {
+  local prefix="$1"
   local installed="${prefix}/m68k-amigaos/lib/libstubs.a"
   local nm="${prefix}/bin/m68k-amigaos-nm"
-  local ranlib="${prefix}/m68k-amigaos/bin/ranlib"
 
-  [[ -f "$built" ]] || die "built libstubs archive missing: ${built}"
-  mkdir -p "$(dirname "$installed")"
-  cp -f "$built" "$installed"
-  "$ranlib" "$installed"
+  [[ -f "$installed" ]] || die "installed libstubs archive missing: ${installed}"
+  if command -v file >/dev/null 2>&1; then
+    file "$installed" | grep 'AmigaOS object/library data' >/dev/null \
+      || die "installed libstubs archive is not Amiga HUNK format: ${installed}"
+  fi
   "$nm" "$installed" | grep ' _DOSBase$' >/dev/null \
-    || die "repaired libstubs archive does not expose _DOSBase"
+    || die "installed libstubs archive does not expose _DOSBase"
 }
 
 patch_bebbo_amiga6_sources() {
@@ -780,6 +834,9 @@ build_gcc_version() {
   patch_newlib_binutils_ordering "$src"
   reset_variant_build_dir "$src" "$prefix"
   patch_libnix_findtooltype_sources "$src"
+  patch_libnix_archive_sources "$src"
+  patch_libnix_link_sources "$src"
+  patch_amiga_statvfs_sources "$src"
   patch_gcc15_libnix_sources "$src"
   if [[ "$version" == "16.1" ]]; then
     patch_gcc16_sources "$src"
@@ -791,7 +848,9 @@ build_gcc_version() {
     patch_amiga_lto_sources "$src" "$version"
   fi
   make_amiga_parallel "$src" all NDK="$ndk" PREFIX="$prefix"
-  repair_default_libstubs_archive "$src" "$prefix"
+  verify_default_libstubs_archive "$prefix"
+
+  patch_filesysbox_statvfs_sources "$src"
 
   log "Installing SDKs for GCC ${version}"
   for sdk in "${SDKS[@]}"; do

@@ -79,9 +79,12 @@ RUN NDK=${NDK_VERSION:-3.2} && \
     else \
       patch --forward --batch -d projects/libnix -p1 -i /root/patches/libnix-findtooltype-const.patch; \
     fi && \
+    patch --forward --batch -d projects/libnix -p1 -i /root/patches/libnix-amigaos-ar-target.patch && \
+    patch --forward --batch -d projects/libnix -p1 -i /root/patches/libnix-libnix4-no-linker-plugin.patch && \
+    patch --forward --batch -d projects/newlib-cygwin -p1 -i /root/patches/newlib-amigaos-statvfs.patch && \
+    patch --forward --batch -d projects/libnix -p1 -i /root/patches/libnix-amigaos-statvfs.patch && \
     if [ "${BUILD_GCC_VERSION}" = "16.1" ]; then \
       patch --forward --batch -d projects/gcc -p1 -i /root/patches/gcc16-m68k-mult-cost.patch; \
-      patch --forward --batch -d projects/gcc -p1 -i /root/patches/gcc16-amigaos-no-statvfs.patch; \
     fi && \
     if ! grep -q 'CODEX_LIBDEBUG_AFTER_LIBGCC' Makefile; then \
       perl -0pi -e 's@(# libdebug\n)@$1# CODEX_LIBDEBUG_AFTER_LIBGCC\n@' Makefile; \
@@ -123,11 +126,8 @@ RUN NDK=${NDK_VERSION:-3.2} && \
       done; \
     fi && \
     make -j $(nproc) all NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
-    BUILD_DIR="build-$(uname -s)-m68k-amigaos" && \
-    cp -f "${BUILD_DIR}/libnix/lib/libstubs.a" \
-      "/opt/amiga-${BUILD_GCC_VERSION}/m68k-amigaos/lib/libstubs.a" && \
-    "/opt/amiga-${BUILD_GCC_VERSION}/m68k-amigaos/bin/ranlib" \
-      "/opt/amiga-${BUILD_GCC_VERSION}/m68k-amigaos/lib/libstubs.a" && \
+    file "/opt/amiga-${BUILD_GCC_VERSION}/m68k-amigaos/lib/libstubs.a" \
+      | grep 'AmigaOS object/library data' >/dev/null && \
     "/opt/amiga-${BUILD_GCC_VERSION}/bin/m68k-amigaos-nm" \
       "/opt/amiga-${BUILD_GCC_VERSION}/m68k-amigaos/lib/libstubs.a" \
       | grep ' _DOSBase$' >/dev/null
@@ -135,6 +135,16 @@ RUN NDK=${NDK_VERSION:-3.2} && \
 # Install all SDKs
 RUN NDK=${NDK_VERSION:-3.2} && \
     cd /root/amiga-gcc && \
+    if [ ! -d projects/filesysbox/.git ]; then \
+      git clone --branch V54.7 --single-branch \
+        https://github.com/salass00/filesysbox projects/filesysbox; \
+    fi && \
+    if patch --reverse --dry-run --force -d projects/filesysbox -p1 -i /root/patches/filesysbox-statvfs-prototype.patch >/dev/null 2>&1; then \
+      echo "filesysbox statvfs patch already applied"; \
+    else \
+      patch --forward --batch -d projects/filesysbox -p1 -i /root/patches/filesysbox-statvfs-prototype.patch; \
+    fi && \
+    rm -rf build/filesysbox && \
     make -j $(nproc) sdk=filesysbox NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
     make -j $(nproc) sdk=sdi NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
     make -j $(nproc) sdk=ahi NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
