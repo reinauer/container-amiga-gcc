@@ -46,6 +46,15 @@ index 586f40df0..f151b2fc8 100644
  static int do_spec_1 (const char *, int, const char *);
  static int do_spec_2 (const char *);
  static void do_option_spec (const char *, const char *);
+@@ -939,7 +940,7 @@
+ #if HAVE_LTO_PLUGIN > 0
+ /* The linker used has full plugin support, use LTO plugin by default.  */
+ #if HAVE_LTO_PLUGIN == 2
+-#define PLUGIN_COND "!fno-use-linker-plugin:%{!fno-lto"
++#define PLUGIN_COND "!fno-use-linker-plugin:%{flto|flto=*|fuse-linker-plugin"
+ #define PLUGIN_COND_CLOSE "}"
+ #else
+ /* The linker used has limited plugin support, use LTO plugin with explicit
 @@ -4652,6 +4653,44 @@ set_collect_gcc_options (void)
    obstack_grow (&collect_obstack, "\0", 1);
    xputenv (XOBFINISH (&collect_obstack, char *));
