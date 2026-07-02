@@ -67,7 +67,7 @@ new file mode 100644
 index 000000000..1d05c11f7
 --- /dev/null
 +++ b/libiberty/simple-object-amiga.c
-@@ -0,0 +1,796 @@
+@@ -0,0 +1,800 @@
 +/* simple-object-amiga.c -- routines to read Amiga HUNK objects.
 +   Copyright (C) 2026 Free Software Foundation, Inc.
 +
@@ -88,6 +88,10 @@ index 000000000..1d05c11f7
 +#include "config.h"
 +#include "libiberty.h"
 +#include "simple-object.h"
++
++#ifdef HAVE_STDINT_H
++#include <stdint.h>
++#endif
 +
 +#ifdef HAVE_STDLIB_H
 +#include <stdlib.h>
