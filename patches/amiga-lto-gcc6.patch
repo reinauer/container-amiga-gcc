@@ -293,7 +293,15 @@ index 5808686cc..0e821036c 100644
  /* See if we have an Amiga file.
   * Also remember all hunks.
   */
-@@ -187,6 +273,20 @@ simple_object_amigahunk_match (
+@@ -139,5 +225,7 @@ simple_object_amigahunk_match (
+     off_t offset, const char *segment_name ATTRIBUTE_UNUSED,
+     const char **errmsg, int *err)
+ {
++  off_t file_offset = offset;
++
+   if (header[0] != 0 || header[1] != 0 || header[2] != 3 || header[3] != 0xe7)
+     return NULL;
+@@ -187,6 +275,21 @@ simple_object_amigahunk_match (
  	  offset += 4;
  	  h->length = read4 (descriptor, &offset) * 4;
  	  h->offset = offset;
@@ -311,10 +319,20 @@ index 5808686cc..0e821036c 100644
 +		h->length = trim_lto_padding (descriptor, h->offset,
 +					      h->length);
 +	    }
++	  h->offset -= file_offset;
  	  offset -= 8;
  
  	  oar->root = h;
-@@ -501,10 +601,14 @@ simple_object_amigahunk_write_to_file (simple_object_write *sobj,
+@@ -283,3 +386,6 @@ simple_object_amigahunk_match (
+-	  break;
+-	}
++	  break;
++
++	default:
++	  return (void *) oar;
++	}
+     }
+@@ -501,10 +607,14 @@ simple_object_amigahunk_write_to_file (simple_object_write *sobj,
        // collect data len
        struct simple_object_write_section_buffer * sb;
        size_t slen = 0;
@@ -330,7 +348,7 @@ index 5808686cc..0e821036c 100644
        unsigned char b[4];
        b[3] = len;
        b[2] = len >> 8;
-@@ -517,6 +621,27 @@ simple_object_amigahunk_write_to_file (simple_object_write *sobj,
+@@ -517,6 +627,27 @@ simple_object_amigahunk_write_to_file (simple_object_write *sobj,
  
        offset += 4;
  
@@ -358,7 +376,7 @@ index 5808686cc..0e821036c 100644
        // write data
        for (sb = section->buffers; sb; sb = sb->next)
  	{
-@@ -528,7 +653,7 @@ simple_object_amigahunk_write_to_file (simple_object_write *sobj,
+@@ -528,7 +659,7 @@ simple_object_amigahunk_write_to_file (simple_object_write *sobj,
  	}
  
        // pad
@@ -367,3 +385,79 @@ index 5808686cc..0e821036c 100644
        if (slen)
  	{
  	  b[1] = 0;
+diff --git a/gcc/lto-streamer-out.c b/gcc/lto-streamer-out.c
+index 57d946d15..34feacc6b 100644
+--- a/gcc/lto-streamer-out.c
++++ b/gcc/lto-streamer-out.c
+@@ -2518,7 +2518,6 @@ write_symbol (struct streamer_tree_cache_d *cache,
+   unsigned char c;
+ 
+   gcc_checking_assert (TREE_PUBLIC (t)
+-		       && !is_builtin_fn (t)
+ 		       && !DECL_ABSTRACT_P (t)
+ 		       && (!VAR_P (t) || !DECL_HARD_REGISTER (t)));
+ 
+diff --git a/gcc/symtab.c b/gcc/symtab.c
+index b867000c3..567c64697 100644
+--- a/gcc/symtab.c
++++ b/gcc/symtab.c
+@@ -2224,6 +2224,6 @@ symtab_node::output_to_lto_symbol_table_p (void)
+   if (VAR_P (decl) && DECL_HARD_REGISTER (decl))
+     return false;
+-  /* FIXME: Builtins corresponding to real functions probably should have
+-     symbol table entries.  */
+-  if (is_builtin_fn (decl))
++  /* Builtin definitions are real symbols and must remain visible to the
++     linker.  Omit only external builtin declarations.  */
++  if (!definition && is_builtin_fn (decl))
+     return false;
+diff --git a/lto-plugin/lto-plugin.c b/lto-plugin/lto-plugin.c
+index e41c456db..876bbec98 100644
+--- a/lto-plugin/lto-plugin.c
++++ b/lto-plugin/lto-plugin.c
+@@ -113,6 +113,7 @@ struct plugin_symtab
+ struct plugin_objfile
+ {
+   int found;
++  int has_lto;
+   int offload;
+   simple_object_read *objfile;
+   struct plugin_symtab *out;
+@@ -902,6 +903,13 @@ process_symtab (void *data, const char *name, off_t offset, off_t length)
+   char *s;
+   char *secdatastart, *secdata;
+ 
++  /* Empty LTO translation units have options but no symbol table.  */
++  if (strcmp (name, ".gnu.lto_.opts") == 0)
++    {
++      obj->has_lto = 1;
++      return 1;
++    }
++
+   if (strncmp (name, LTO_SECTION_PREFIX, LTO_SECTION_PREFIX_LEN) != 0)
+     return 1;
+ 
+@@ -995,6 +1003,7 @@ claim_file_handler (const struct ld_plugin_input_file *file, int *claimed)
+   *claimed = 0;
+   obj.file = file;
+   obj.found = 0;
++  obj.has_lto = 0;
+   obj.offload = 0;
+   obj.out = &lto_file.symtab;
+   errmsg = NULL;
+@@ -1021,13 +1030,13 @@ claim_file_handler (const struct ld_plugin_input_file *file, int *claimed)
+     simple_object_find_sections (obj.objfile, process_offload_section,
+ 				 &obj, &err);
+ 
+-  if (obj.found == 0 && obj.offload == 0)
++  if (obj.found == 0 && !obj.has_lto && obj.offload == 0)
+     goto err;
+ 
+   if (obj.found > 1)
+     resolve_conflicts (&lto_file.symtab, &lto_file.conflicts);
+ 
+-  if (obj.found > 0)
++  if (obj.found > 0 || obj.has_lto)
+     {
+       status = add_symbols (file->handle, lto_file.symtab.nsyms,
+ 			    lto_file.symtab.syms);
