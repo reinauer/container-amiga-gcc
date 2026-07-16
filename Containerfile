@@ -66,6 +66,7 @@ RUN NDK=${NDK_VERSION:-3.2} && \
       exit 1; \
     fi && \
     sed -i -r 's#\S+/gcc#https://github.com/AmigaPorts/gcc#g' default-repos && \
+    perl -pi -e 's!\$\(ZLIB\)\.tar\.xz!\$\(ZLIB\).tar.gz!g; s!https://zlib\.net/\$\(ZLIB\)\.tar\.gz!https://zlib.net/fossils/\$\(ZLIB\).tar.gz!g' Makefile && \
     mkdir -p /opt/amiga-${BUILD_GCC_VERSION} && \
     make branch branch=${BUILD_GCC_BRANCH} mod=gcc && \
     make update NDK=${NDK} && \

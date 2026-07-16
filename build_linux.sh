@@ -80,9 +80,10 @@ Build Bebbo/AmigaPorts m68k-amigaos-gcc on Ubuntu Linux using the same high-leve
 steps as Containerfile.
 
 Defaults:
-  versions:       13.4, 15.2, 6.5.0b
+  versions:       6.5.0b, 13.4, 16.1
   prefixes:       /opt/amiga-vVERSION-YYYYMMDD
   NDK:            3.2
+  Amiga LTO:      enabled
   source workdir: ./.linux-build
 
 Options:
@@ -263,7 +264,8 @@ parse_args() {
   done
 
   if [[ ${#VERSION_SPECS[@]} -eq 0 ]]; then
-    VERSION_SPECS=("13.4" "15.2" "6.5.0b")
+    VERSION_SPECS=("6.5.0b" "13.4" "16.1")
+    ENABLE_AMIGA_LTO=1
   fi
 
   if [[ -n "$PREFIX_OVERRIDE" && ${#VERSION_SPECS[@]} -ne 1 ]]; then
@@ -271,13 +273,13 @@ parse_args() {
   fi
 
   if [[ "$ENABLE_AMIGA_LTO" -eq 1 ]]; then
-    if [[ ${#VERSION_SPECS[@]} -ne 1 ]]; then
-      die "--enable-amiga-lto requires exactly one --version"
-    fi
-    case "${VERSION_SPECS[0]%%:*}" in
-      6.5.0b|13.4|16.1) ;;
-      *) die "--enable-amiga-lto currently supports --version 6.5.0b, 13.4, or 16.1" ;;
-    esac
+    local lto_spec
+    for lto_spec in "${VERSION_SPECS[@]}"; do
+      case "${lto_spec%%:*}" in
+        6.5.0b|13.4|16.1) ;;
+        *) die "--enable-amiga-lto currently supports --version 6.5.0b, 13.4, or 16.1" ;;
+      esac
+    done
   fi
 
   if [[ "$ENABLE_AMIGA_LTO" -eq 1 && "$ENABLE_BEBBO_AMIGA6_PATCHES" -eq 1 ]]; then
@@ -533,7 +535,7 @@ reset_variant_build_dir() {
   local stamp="${build}/.build_linux_variant"
   local stamp_text
 
-  [[ "$REUSE_SOURCE" -eq 1 ]] || return
+  [[ "$REUSE_SOURCE" -eq 1 ]] || return 0
 
   stamp_text="$(printf 'prefix=%s\nlto=%s\nbebbo_amiga6=%s' "$prefix" "$ENABLE_AMIGA_LTO" "$ENABLE_BEBBO_AMIGA6_PATCHES")"
   if [[ -f "$stamp" && "$(cat "$stamp")" == "$stamp_text" ]]; then
@@ -556,7 +558,7 @@ patch_libdebug_ordering() {
   local makefile="${src}/Makefile"
   local deps_line
 
-  [[ -f "$makefile" ]] || return
+  [[ -f "$makefile" ]] || return 0
 
   deps_line='$(BUILD)/libdebug/Makefile: $(BUILD)/gcc/_libgcc_done $(BUILD)/libnix/_done $(PROJECTS)/libdebug/configure $(shell find 2>/dev/null $(PROJECTS)/libdebug -not \( -path $(PROJECTS)/libdebug/.git -prune \) -type f)'
 
@@ -578,7 +580,7 @@ patch_newlib_binutils_ordering() {
   local makefile="${src}/Makefile"
   local deps_line
 
-  [[ -f "$makefile" ]] || return
+  [[ -f "$makefile" ]] || return 0
 
   deps_line='$(BUILD)/newlib/newlib/libc.a: $(BUILD)/newlib/newlib/Makefile $(BUILD)/binutils/_gdb $(NEWLIB_FILES)'
 
@@ -589,6 +591,25 @@ patch_newlib_binutils_ordering() {
 
   grep -Fq '$(BUILD)/newlib/newlib/libc.a: $(BUILD)/newlib/newlib/Makefile $(BUILD)/binutils/_gdb' "$makefile" \
     || die "failed to make newlib wait for binutils gdb in ${makefile}"
+}
+
+patch_zlib_download() {
+  local src="$1"
+  local makefile="${src}/Makefile"
+
+  [[ -f "$makefile" ]] || die "missing source Makefile: ${makefile}"
+
+  if grep -Fq 'https://zlib.net/$(ZLIB).tar.xz' "$makefile"; then
+    log "Patching obsolete zlib download URL"
+    perl -pi -e '
+      s!\$\(ZLIB\)\.tar\.xz!\$\(ZLIB\).tar.gz!g;
+      s!https://zlib\.net/\$\(ZLIB\)\.tar\.gz!https://zlib.net/fossils/\$\(ZLIB\).tar.gz!g;
+    ' "$makefile"
+  fi
+
+  if grep -Fq 'https://zlib.net/$(ZLIB).tar.xz' "$makefile"; then
+    die "failed to replace obsolete zlib download URL in ${makefile}"
+  fi
 }
 
 patch_gcc15_libnix_sources() {
@@ -829,6 +850,7 @@ build_gcc_version() {
 
   log "Building and installing GCC ${version} into ${prefix}"
   make_amiga "$src" branch branch="$branch" mod=gcc
+  patch_zlib_download "$src"
   make_amiga "$src" update NDK="$ndk"
   patch_libdebug_ordering "$src"
   patch_newlib_binutils_ordering "$src"

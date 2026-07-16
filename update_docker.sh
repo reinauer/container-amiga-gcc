@@ -43,7 +43,6 @@ IMAGE_NAME="amiga-gcc"
 GCC_VERSION_SPECS=(
     "6.5.0b:amiga6:1"
     "13.4:amiga13.4:1"
-    "15.2:amiga15.2:0"
     "16.1:amiga16.1:1"
 )
 
