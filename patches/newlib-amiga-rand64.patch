@@ -1,0 +1,138 @@
+--- a/newlib/libc/stdlib/rand.c
++++ b/newlib/libc/stdlib/rand.c
+@@ -58,6 +58,56 @@
+ #include <stdlib.h>
+ #include <reent.h>
+ 
++
++static unsigned long long
++advance_rand48_state (unsigned long long *state)
++{
++  const unsigned long mult0 = 0x7f09u;
++  const unsigned long mult1 = 0x957fu;
++  const unsigned long mult2 = 0x4c95u;
++  const unsigned long mult3 = 0x5851u;
++  unsigned long s0;
++  unsigned long s1;
++  unsigned long s2;
++  unsigned long s3;
++  unsigned long p0;
++  unsigned long p1;
++  unsigned long p2;
++  unsigned long p3;
++  unsigned long carry;
++
++  s0 = (unsigned long)(*state & 0xffffULL);
++  s1 = (unsigned long)((*state >> 16) & 0xffffULL);
++  s2 = (unsigned long)((*state >> 32) & 0xffffULL);
++  s3 = (unsigned long)((*state >> 48) & 0xffffULL);
++
++  p0 = mult0 * s0 + 1;
++  p1 = mult0 * s1 + mult1 * s0;
++  p2 = mult0 * s2 + mult1 * s1 + mult2 * s0;
++  p3 = mult0 * s3 + mult1 * s2 + mult2 * s1 + mult3 * s0;
++
++  carry = p0 >> 16;
++  p0 &= 0xffffULL;
++
++  p1 += carry;
++  carry = p1 >> 16;
++  p1 &= 0xffffULL;
++
++  p2 += carry;
++  carry = p2 >> 16;
++  p2 &= 0xffffULL;
++
++  p3 += carry;
++  p3 &= 0xffffULL;
++
++  *state = (unsigned long long) p0;
++  *state |= ((unsigned long long) p1) << 16;
++  *state |= ((unsigned long long) p2) << 32;
++  *state |= ((unsigned long long) p3) << 48;
++
++  return *state;
++}
++
+ void
+ srand (unsigned int seed)
+ {
+@@ -76,8 +126,7 @@
+      Computer Programming," Vol 2, Seminumerical Algorithms, Third
+      Edition, Addison-Wesley, 1998, p. 106 (line 26) & p. 108 */
+   _REENT_CHECK_RAND48(reent);
+-  _REENT_RAND_NEXT(reent) =
+-     _REENT_RAND_NEXT(reent) * __extension__ 6364136223846793005LL + 1;
++  _REENT_RAND_NEXT(reent) = advance_rand48_state (&_REENT_RAND_NEXT(reent));
+   return (int)((_REENT_RAND_NEXT(reent) >> 32) & RAND_MAX);
+ }
+ 
+--- a/newlib/libc/stdlib/random.c
++++ b/newlib/libc/stdlib/random.c
+@@ -56,6 +56,56 @@
+ #include <stdlib.h>
+ #include <reent.h>
+ 
++
++static unsigned long long
++advance_rand48_state (unsigned long long *state)
++{
++  const unsigned long mult0 = 0x7f09u;
++  const unsigned long mult1 = 0x957fu;
++  const unsigned long mult2 = 0x4c95u;
++  const unsigned long mult3 = 0x5851u;
++  unsigned long s0;
++  unsigned long s1;
++  unsigned long s2;
++  unsigned long s3;
++  unsigned long p0;
++  unsigned long p1;
++  unsigned long p2;
++  unsigned long p3;
++  unsigned long carry;
++
++  s0 = (unsigned long)(*state & 0xffffULL);
++  s1 = (unsigned long)((*state >> 16) & 0xffffULL);
++  s2 = (unsigned long)((*state >> 32) & 0xffffULL);
++  s3 = (unsigned long)((*state >> 48) & 0xffffULL);
++
++  p0 = mult0 * s0 + 1;
++  p1 = mult0 * s1 + mult1 * s0;
++  p2 = mult0 * s2 + mult1 * s1 + mult2 * s0;
++  p3 = mult0 * s3 + mult1 * s2 + mult2 * s1 + mult3 * s0;
++
++  carry = p0 >> 16;
++  p0 &= 0xffffULL;
++
++  p1 += carry;
++  carry = p1 >> 16;
++  p1 &= 0xffffULL;
++
++  p2 += carry;
++  carry = p2 >> 16;
++  p2 &= 0xffffULL;
++
++  p3 += carry;
++  p3 &= 0xffffULL;
++
++  *state = (unsigned long long) p0;
++  *state |= ((unsigned long long) p1) << 16;
++  *state |= ((unsigned long long) p2) << 32;
++  *state |= ((unsigned long long) p3) << 48;
++
++  return *state;
++}
++
+ void
+ srandom (unsigned int seed)
+ {
+@@ -74,8 +124,7 @@
+      Computer Programming," Vol 2, Seminumerical Algorithms, Third
+      Edition, Addison-Wesley, 1998, p. 106 (line 26) & p. 108 */
+   _REENT_CHECK_RAND48(reent);
+-  _REENT_RAND_NEXT(reent) =
+-     _REENT_RAND_NEXT(reent) * __extension__ 6364136223846793005LL + 1;
++  _REENT_RAND_NEXT(reent) = advance_rand48_state (&_REENT_RAND_NEXT(reent));
+   return (long int)((_REENT_RAND_NEXT(reent) >> 32) & RAND_MAX);
+ }
+ 
