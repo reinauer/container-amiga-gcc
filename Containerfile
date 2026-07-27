@@ -213,6 +213,13 @@ RUN ln -s /opt/amiga-${BUILD_GCC_VERSION} /opt/amiga
 ENV PATH=/opt/amiga/bin:$PATH
 
 # Add labels for documentation
+LABEL org.opencontainers.image.title="amiga-gcc" \
+      org.opencontainers.image.description="AmigaOS cross-compiler toolchain (Bebbo's amiga-gcc) for Linux/AmigaOS cross-development" \
+      org.opencontainers.image.url="https://hub.docker.com/r/stefanreinauer/amiga-gcc/" \
+      org.opencontainers.image.source="https://github.com/reinauer/container-amiga-gcc" \
+      org.opencontainers.image.documentation="https://github.com/reinauer/container-amiga-gcc/blob/main/README.md" \
+      org.opencontainers.image.base.name="docker.io/library/ubuntu:25.10" \
+      org.opencontainers.image.version="${BUILD_GCC_VERSION}"
 LABEL gcc.version="${BUILD_GCC_VERSION}"
 LABEL gcc.branch="${BUILD_GCC_BRANCH}"
 LABEL gcc.amiga_lto="${BUILD_AMIGA_LTO}"
