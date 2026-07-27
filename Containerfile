@@ -195,9 +195,15 @@ RUN sed -i "s|/opt/amiga/|/opt/amiga-${BUILD_GCC_VERSION}/|g" \
     /opt/amiga-${BUILD_GCC_VERSION}/bin/aos68km \
     /opt/amiga-${BUILD_GCC_VERSION}/bin/aos68kr
 
-# Install mbtaylor1982's gencrc
-RUN wget -P /bin https://github.com/mbtaylor1982/gencrc/releases/latest/download/gencrc && \
-    chmod +x /bin/gencrc
+# Build and install mbtaylor1982's gencrc from source
+# (the release binary is x86-64 only)
+RUN cd /tmp && \
+    git clone --depth 1 https://github.com/mbtaylor1982/gencrc.git && \
+    cd gencrc && \
+    make && \
+    install -m 755 gencrc /bin/gencrc && \
+    cd / && \
+    rm -rf /tmp/gencrc
 
 # Clean up
 RUN cd / && \
