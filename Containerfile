@@ -34,10 +34,11 @@ RUN cd /tmp && \
     cd / && \
     rm -rf /tmp/lha
 
-# Install amitools.
+# Install amitools HEAD with the optional Vamos runtime dependencies.
 RUN apt-get -y autoremove && \
     rm -rf /usr/lib/python3.*/EXTERNALLY-MANAGED && \
-    pip3 install -U git+https://github.com/cnvogelg/amitools.git
+    pip3 install -U \
+      "amitools[vamos] @ git+https://github.com/cnvogelg/amitools.git"
 
 COPY vbcc.diff /root
 COPY patches /root/patches
