@@ -652,12 +652,19 @@ patch_libnix_link_sources() {
 
 patch_amiga_statvfs_sources() {
   local src="$1"
+  local prefix="$2"
   local build_dir="${src}/build-$(uname -s)-m68k-amigaos"
   local gcc_build="${build_dir}/gcc"
+  local prefix_header="${prefix}/m68k-amigaos/include/sys/statvfs.h"
 
   log "Patching AmigaOS statvfs support"
   apply_patch_file "$src/projects/newlib-cygwin" "${SCRIPT_DIR}/patches/newlib-amigaos-statvfs.patch"
   apply_patch_file "$src/projects/libnix" "${SCRIPT_DIR}/patches/libnix-amigaos-statvfs.patch"
+
+  if [[ -f "$prefix_header" ]] && ! grep -Eq '^[[:space:]]*int[[:space:]]+statvfs[[:space:]]*\(' "$prefix_header"; then
+    log "Adding statvfs prototype to ${prefix_header}"
+    perl -0pi -e 's@\n#ifdef __cplusplus\n}\n#endif\n\n#endif@\nint statvfs(const char *path, struct statvfs *buf);\n\n#ifdef __cplusplus\n}\n#endif\n\n#endif@' "$prefix_header"
+  fi
 
   rm -f "${build_dir}/newlib/_done" "${build_dir}/newlib/newlib/libc.a"
   rm -f "${build_dir}/libnix/_done"
@@ -665,6 +672,15 @@ patch_amiga_statvfs_sources() {
     find "$gcc_build" -name config.cache -type f -exec rm -f {} +
   fi
   rm -f "${gcc_build}/Makefile" "${gcc_build}/_done"
+}
+
+patch_newlib_rand64_sources() {
+  local src="$1"
+  local build_dir="${src}/build-$(uname -s)-m68k-amigaos"
+
+  log "Patching Newlib rand/random 64-bit LCG for 68000-safe codegen"
+  apply_patch_file "$src/projects/newlib-cygwin" "${SCRIPT_DIR}/patches/newlib-amiga-rand64.patch"
+  rm -f "${build_dir}/newlib/_done" "${build_dir}/newlib/newlib/libc.a"
 }
 
 patch_filesysbox_statvfs_sources() {
@@ -706,6 +722,14 @@ apply_patch_file() {
   [[ -d "$dir" ]] || die "patch directory does not exist: ${dir}"
   [[ -f "$patch_file" ]] || die "missing patch file: ${patch_file}"
 
+  if (
+    cd "$dir"
+    "$PATCH_BIN" --forward --dry-run --batch -p1 -i "$patch_file" >/dev/null 2>&1
+    "$PATCH_BIN" --forward --batch -p1 -i "$patch_file"
+  ); then
+    return
+  fi
+
   if reverse_output="$(
     cd "$dir"
     "$PATCH_BIN" --reverse --dry-run --batch -p1 -i "$patch_file" 2>&1
@@ -717,14 +741,6 @@ apply_patch_file() {
         return
         ;;
     esac
-  fi
-
-  if (
-    cd "$dir"
-    "$PATCH_BIN" --forward --dry-run --batch -p1 -i "$patch_file" >/dev/null 2>&1
-    "$PATCH_BIN" --forward --batch -p1 -i "$patch_file"
-  ); then
-    return
   fi
 
   die "failed to apply patch: ${patch_file}"
@@ -858,10 +874,11 @@ build_gcc_version() {
   patch_libnix_findtooltype_sources "$src"
   patch_libnix_archive_sources "$src"
   patch_libnix_link_sources "$src"
-  patch_amiga_statvfs_sources "$src"
+  patch_amiga_statvfs_sources "$src" "$prefix"
   patch_gcc15_libnix_sources "$src"
   if [[ "$version" == "16.1" ]]; then
     patch_gcc16_sources "$src"
+    patch_newlib_rand64_sources "$src"
   fi
   if [[ "$ENABLE_BEBBO_AMIGA6_PATCHES" -eq 1 && "$branch" == "amiga6" ]]; then
     patch_bebbo_amiga6_sources "$src"
