@@ -881,6 +881,7 @@ build_gcc_version() {
     make_amiga_parallel "$src" "sdk=${sdk}" NDK="$ndk" PREFIX="$prefix"
   done
   make_amiga_parallel "$src" all-sdk NDK="$ndk" PREFIX="$prefix"
+  "${SCRIPT_DIR}/install_additional_sdks.sh" "$prefix"
 
   download_and_fix_includes "$src" "$prefix"
   build_vlink_and_vbcc "$src" "$prefix" "$ndk"
