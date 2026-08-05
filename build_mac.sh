@@ -912,6 +912,8 @@ build_gcc_version() {
     patch_amiga_lto_sources "$src" "$version"
   fi
   make_amiga_parallel "$src" all NDK="$ndk" PREFIX="$prefix"
+  log "Installing target zlib for GCC ${version}"
+  make_amiga_parallel "$src" zlib NDK="$ndk" PREFIX="$prefix"
   verify_default_libstubs_archive "$prefix"
 
   patch_filesysbox_statvfs_sources "$src"

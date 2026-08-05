@@ -128,6 +128,7 @@ RUN NDK=${NDK_VERSION:-3.2} && \
       done; \
     fi && \
     make -j $(nproc) all NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
+    make -j $(nproc) zlib NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
     file "/opt/amiga-${BUILD_GCC_VERSION}/m68k-amigaos/lib/libstubs.a" \
       | grep 'AmigaOS object/library data' >/dev/null && \
     "/opt/amiga-${BUILD_GCC_VERSION}/bin/m68k-amigaos-nm" \
