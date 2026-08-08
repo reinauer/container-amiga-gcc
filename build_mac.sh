@@ -13,8 +13,7 @@ INSTALL_AMITOOLS=1
 REUSE_SOURCE=0
 DEFAULT_SYMLINK_VERSION=""
 PREFIX_OVERRIDE=""
-ENABLE_AMIGA_LTO=0
-ENABLE_BEBBO_AMIGA6_PATCHES=0
+ENABLE_AMIGA_LTO=1
 HOST_CC="${CC:-}"
 HOST_CXX="${CXX:-}"
 VERSION_SPECS=()
@@ -88,28 +87,25 @@ Options:
   --repo URL                 Main amiga-gcc repository URL
   --cc PATH_OR_NAME          Host C compiler (default: prefer gcc-15)
   --cxx PATH_OR_NAME         Host C++ compiler (default: prefer g++-15)
-  --enable-amiga-lto         Apply experimental Amiga HUNK LTO patches and
-                             build binutils with linker plugin support.
-                             Supported for GCC 6.5.0b, 13.4, and 16.1.
-  --enable-bebbo-amiga6-patches
-                             Apply selected Bebbo amiga6 GCC backend and
-                             optimizer patches on top of AmigaPorts/gcc
+  --enable-amiga-lto         Enable Amiga HUNK LTO support (default)
+  --disable-amiga-lto        Disable Amiga HUNK LTO support
+                             LTO is supported for GCC 6.5.0b, 13.4, and 16.1.
   --skip-brew                Do not install Homebrew formulae
   --skip-amitools            Do not create a local amitools Python venv
   --reuse-source             Reuse existing per-version source trees
                              Generated build directories are reused only when
-                             they match the requested prefix and patch modes
+                             they match the requested prefix and LTO mode
   --link-default VERSION     Create/update /opt/amiga -> /opt/amiga-VERSION
   -h, --help                 Show this help
 
 Examples:
   ./build_mac.sh
   ./build_mac.sh --ndk 3.9 --version 13.4
-  ./build_mac.sh --version 13.4 --prefix /opt/amiga-13.4-lto --enable-amiga-lto
-  ./build_mac.sh --version 6.5.0b --enable-bebbo-amiga6-patches
+  ./build_mac.sh --version 13.4 --prefix /opt/amiga-13.4-lto
+  ./build_mac.sh --version 6.5.0b --disable-amiga-lto
   ./build_mac.sh --cc gcc-12 --cxx g++-12
-  ./build_mac.sh --version 16.1 --prefix /opt/amiga-16.1-lto --enable-amiga-lto
-  ./build_mac.sh --version 15.2:amiga15.2 --link-default 15.2
+  ./build_mac.sh --version 16.1 --prefix /opt/amiga-16.1-lto
+  ./build_mac.sh --version 15.2:amiga15.2 --disable-amiga-lto --link-default 15.2
 EOF
 }
 
@@ -205,8 +201,8 @@ parse_args() {
         ENABLE_AMIGA_LTO=1
         shift
         ;;
-      --enable-bebbo-amiga6-patches)
-        ENABLE_BEBBO_AMIGA6_PATCHES=1
+      --disable-amiga-lto)
+        ENABLE_AMIGA_LTO=0
         shift
         ;;
       --skip-brew)
@@ -238,7 +234,6 @@ parse_args() {
 
   if [[ ${#VERSION_SPECS[@]} -eq 0 ]]; then
     VERSION_SPECS=("6.5.0b" "13.4" "16.1")
-    ENABLE_AMIGA_LTO=1
   fi
 
   if [[ -n "$PREFIX_OVERRIDE" && ${#VERSION_SPECS[@]} -ne 1 ]]; then
@@ -250,14 +245,11 @@ parse_args() {
     for lto_spec in "${VERSION_SPECS[@]}"; do
       case "${lto_spec%%:*}" in
         6.5.0b|13.4|16.1) ;;
-        *) die "--enable-amiga-lto currently supports --version 6.5.0b, 13.4, or 16.1" ;;
+        *) die "Amiga LTO currently supports --version 6.5.0b, 13.4, or 16.1" ;;
       esac
     done
   fi
 
-  if [[ "$ENABLE_AMIGA_LTO" -eq 1 && "$ENABLE_BEBBO_AMIGA6_PATCHES" -eq 1 ]]; then
-    die "--enable-amiga-lto and --enable-bebbo-amiga6-patches cannot be combined"
-  fi
 }
 
 version_from_spec() {
@@ -568,7 +560,7 @@ reset_variant_build_dir() {
 
   [[ "$REUSE_SOURCE" -eq 1 ]] || return 0
 
-  stamp_text="$(printf 'prefix=%s\nlto=%s\nbebbo_amiga6=%s' "$prefix" "$ENABLE_AMIGA_LTO" "$ENABLE_BEBBO_AMIGA6_PATCHES")"
+  stamp_text="$(printf 'prefix=%s\nlto=%s' "$prefix" "$ENABLE_AMIGA_LTO")"
   if [[ -f "$stamp" && "$(cat "$stamp")" == "$stamp_text" ]]; then
     return
   fi
@@ -581,7 +573,7 @@ reset_variant_build_dir() {
   fi
 
   mkdir -p "$build"
-  printf 'prefix=%s\nlto=%s\nbebbo_amiga6=%s\n' "$prefix" "$ENABLE_AMIGA_LTO" "$ENABLE_BEBBO_AMIGA6_PATCHES" > "$stamp"
+  printf 'prefix=%s\nlto=%s\n' "$prefix" "$ENABLE_AMIGA_LTO" > "$stamp"
 }
 
 patch_libdebug_ordering() {
@@ -640,16 +632,6 @@ patch_zlib_download() {
 
   if grep -Fq 'https://zlib.net/$(ZLIB).tar.xz' "$makefile"; then
     die "failed to replace obsolete zlib download URL in ${makefile}"
-  fi
-}
-
-patch_macos_gcc_sources() {
-  local src="$1"
-  local relative_prefix="${src}/projects/gcc/libiberty/make-relative-prefix.c"
-
-  if [[ -f "$relative_prefix" ]] && ! grep -q '#include <mach-o/dyld.h>' "$relative_prefix"; then
-    log "Patching GCC libiberty Darwin executable-path include"
-    perl -0pi -e 's|(#include <string\.h>\n)|$1\n#if defined(__MACH__)\n#include <mach-o/dyld.h>\n#endif\n|' "$relative_prefix"
   fi
 }
 
@@ -747,19 +729,6 @@ patch_filesysbox_statvfs_sources() {
   fi
 }
 
-patch_gcc16_sources() {
-  local src="$1"
-  local gcc_build="${src}/build-$(uname -s)-m68k-amigaos/gcc"
-
-  log "Patching GCC 16 m68k multiply cost overflow"
-  apply_patch_file "$src/projects/gcc" "${SCRIPT_DIR}/patches/gcc16-m68k-mult-cost.patch"
-
-  if [[ -d "$gcc_build" ]]; then
-    find "$gcc_build" -name config.cache -type f -exec rm -f {} +
-  fi
-  rm -f "${gcc_build}/Makefile" "${gcc_build}/_done"
-}
-
 apply_patch_file() {
   local dir="$1"
   local patch_file="$2"
@@ -793,44 +762,11 @@ apply_patch_file() {
   die "failed to apply patch: ${patch_file}"
 }
 
-apply_patch_dir() {
-  local dir="$1"
-  local patch_dir="$2"
-  local patch_file
-  local marker="${dir}/.codex-$(basename "$patch_dir")-patches-applied"
-  local found=0
-
-  [[ -d "$patch_dir" ]] || die "patch directory does not exist: ${patch_dir}"
-
-  if [[ -f "$marker" ]]; then
-    log "Patch series already applied: ${patch_dir}"
-    return
-  fi
-
-  while IFS= read -r patch_file; do
-    found=1
-    apply_patch_file "$dir" "$patch_file"
-  done < <(find "$patch_dir" -maxdepth 1 -name '*.patch' -type f | sort)
-
-  [[ "$found" -eq 1 ]] || die "no patch files found in ${patch_dir}"
-  printf 'applied=%s\n' "$(basename "$patch_dir")" > "$marker"
-}
-
-patch_amiga_lto_sources() {
+enable_amiga_lto() {
   local src="$1"
-  local version="$2"
   local makefile="${src}/Makefile"
-  local binutils_build="${src}/build-$(uname -s)-m68k-amigaos/binutils"
-  local gcc_build="${src}/build-$(uname -s)-m68k-amigaos/gcc"
-  local binutils_patch="${SCRIPT_DIR}/patches/amiga-lto-binutils.patch"
-  local gcc_patch="${SCRIPT_DIR}/patches/amiga-lto-gcc.patch"
 
-  log "Patching Amiga HUNK LTO support"
-  if [[ "$version" == "6.5.0b" ]]; then
-    gcc_patch="${SCRIPT_DIR}/patches/amiga-lto-gcc6.patch"
-  fi
-  apply_patch_file "$src/projects/binutils" "$binutils_patch"
-  apply_patch_file "$src/projects/gcc" "$gcc_patch"
+  log "Enabling Amiga HUNK LTO support"
 
   if [[ -f "$makefile" ]] && ! grep -q 'CODEX_AMIGA_LTO_PLUGINS' "$makefile"; then
     perl -0pi -e 's@ifneq \(m68k-elf,\$\(TARGET\)\)\nCONFIG_BINUTILS \+= --disable-plugins\nendif\n@CONFIG_BINUTILS += --enable-plugins # CODEX_AMIGA_LTO_PLUGINS\n@' "$makefile"
@@ -838,15 +774,6 @@ patch_amiga_lto_sources() {
 
   grep -q 'CODEX_AMIGA_LTO_PLUGINS' "$makefile" \
     || die "failed to enable binutils plugin support in ${makefile}"
-
-  if [[ -d "$binutils_build" ]]; then
-    find "$binutils_build" -name config.cache -type f -exec rm -f {} +
-  fi
-  if [[ -d "$gcc_build" ]]; then
-    find "$gcc_build" -name config.cache -type f -exec rm -f {} +
-  fi
-  rm -f "${binutils_build}/Makefile" "${binutils_build}/_done"
-  rm -f "${gcc_build}/Makefile" "${gcc_build}/_done"
 }
 
 verify_default_libstubs_archive() {
@@ -869,13 +796,6 @@ verify_default_libstubs_archive() {
   fi
   "$nm" "$installed" | grep ' _DOSBase$' >/dev/null \
     || die "installed libstubs archive does not expose _DOSBase"
-}
-
-patch_bebbo_amiga6_sources() {
-  local src="$1"
-
-  log "Patching selected Bebbo amiga6 GCC changes"
-  apply_patch_dir "$src/projects/gcc" "${SCRIPT_DIR}/patches/bebbo-amiga6"
 }
 
 make_amiga() {
@@ -928,21 +848,14 @@ build_gcc_version() {
   patch_libdebug_ordering "$src"
   patch_newlib_binutils_ordering "$src"
   reset_variant_build_dir "$src" "$prefix"
-  patch_macos_gcc_sources "$src"
   patch_libnix_findtooltype_sources "$src"
   patch_libnix_archive_sources "$src"
   patch_libnix_link_sources "$src"
   patch_amiga_statvfs_sources "$src"
   patch_filesysbox_statvfs_sources "$src" "$prefix"
   patch_gcc15_libnix_sources "$src"
-  if [[ "$version" == "16.1" ]]; then
-    patch_gcc16_sources "$src"
-  fi
-  if [[ "$ENABLE_BEBBO_AMIGA6_PATCHES" -eq 1 && "$branch" == "amiga6" ]]; then
-    patch_bebbo_amiga6_sources "$src"
-  fi
   if [[ "$ENABLE_AMIGA_LTO" -eq 1 ]]; then
-    patch_amiga_lto_sources "$src" "$version"
+    enable_amiga_lto "$src"
   fi
   make_amiga_parallel "$src" all NDK="$ndk" PREFIX="$prefix"
   log "Installing target zlib for GCC ${version}"

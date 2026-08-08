@@ -10,8 +10,7 @@ ARG BUILD_GCC_VERSION=6.5.0b
 
 # NDK version - defaults to 3.2 for all GCC versions
 ARG NDK_VERSION
-ARG BUILD_AMIGA_LTO=0
-ARG BUILD_BEBBO_AMIGA6_PATCHES=0
+ARG BUILD_AMIGA_LTO=1
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -60,14 +59,6 @@ RUN NDK=${NDK_VERSION:-3.2} && \
           ;; \
       esac; \
     fi && \
-    if [ "${BUILD_AMIGA_LTO}" = "1" ] && [ "${BUILD_BEBBO_AMIGA6_PATCHES}" = "1" ]; then \
-      echo "BUILD_AMIGA_LTO=1 and BUILD_BEBBO_AMIGA6_PATCHES=1 cannot be combined" >&2; \
-      exit 1; \
-    fi && \
-    if [ "${BUILD_BEBBO_AMIGA6_PATCHES}" = "1" ] && [ "${BUILD_GCC_BRANCH}" != "amiga6" ]; then \
-      echo "BUILD_BEBBO_AMIGA6_PATCHES=1 requires BUILD_GCC_BRANCH=amiga6" >&2; \
-      exit 1; \
-    fi && \
     sed -i -r 's#\S+/gcc#https://github.com/AmigaPorts/gcc#g' default-repos && \
     perl -pi -e 's!\$\(ZLIB\)\.tar\.xz!\$\(ZLIB\).tar.gz!g; s!https://zlib\.net/\$\(ZLIB\)\.tar\.gz!https://zlib.net/fossils/\$\(ZLIB\).tar.gz!g' Makefile && \
     mkdir -p /opt/amiga-${BUILD_GCC_VERSION} && \
@@ -88,9 +79,6 @@ RUN NDK=${NDK_VERSION:-3.2} && \
     patch --forward --batch -d projects/newlib-cygwin -p1 -i /root/patches/newlib-amigaos-statvfs.patch && \
     patch --forward --batch -d projects/libnix -p1 -i /root/patches/libnix-amigaos-statvfs.patch && \
     patch --forward --batch -p1 -i /root/patches/amiga-gcc-zlib-68060.patch && \
-    if [ "${BUILD_GCC_VERSION}" = "16.1" ]; then \
-      patch --forward --batch -d projects/gcc -p1 -i /root/patches/gcc16-m68k-mult-cost.patch; \
-    fi && \
     if ! grep -q 'CODEX_LIBDEBUG_AFTER_LIBGCC' Makefile; then \
       perl -0pi -e 's@(# libdebug\n)@$1# CODEX_LIBDEBUG_AFTER_LIBGCC\n@' Makefile; \
     fi && \
@@ -103,32 +91,8 @@ RUN NDK=${NDK_VERSION:-3.2} && \
         perl -0pi -e 's@^\$\(BUILD\)/newlib/newlib/libc\.a:.*$@$ENV{NEWLIB_DEPS_LINE}@m' Makefile; \
     fi && \
     if [ "${BUILD_AMIGA_LTO}" = "1" ]; then \
-      patch --forward --batch -d projects/binutils -p1 -i /root/patches/amiga-lto-binutils.patch && \
-      if [ "${BUILD_GCC_VERSION}" = "6.5.0b" ]; then \
-        patch --forward --batch -d projects/gcc -p1 -i /root/patches/amiga-lto-gcc6.patch; \
-      else \
-        patch --forward --batch -d projects/gcc -p1 -i /root/patches/amiga-lto-gcc.patch; \
-      fi && \
       perl -0pi -e 's@ifneq \(m68k-elf,\$\(TARGET\)\)\nCONFIG_BINUTILS \+= --disable-plugins\nendif\n@CONFIG_BINUTILS += --enable-plugins # CODEX_AMIGA_LTO_PLUGINS\n@' Makefile && \
-      grep -q 'CODEX_AMIGA_LTO_PLUGINS' Makefile && \
-      BUILD_DIR="build-$(uname -s)-m68k-amigaos" && \
-      if [ -d "${BUILD_DIR}/binutils" ]; then \
-        find "${BUILD_DIR}/binutils" -name config.cache -type f -delete; \
-      fi && \
-      if [ -d "${BUILD_DIR}/gcc" ]; then \
-        find "${BUILD_DIR}/gcc" -name config.cache -type f -delete; \
-      fi && \
-      rm -f "${BUILD_DIR}/binutils/Makefile" "${BUILD_DIR}/binutils/_done" && \
-      rm -f "${BUILD_DIR}/gcc/Makefile" "${BUILD_DIR}/gcc/_done"; \
-    fi && \
-    if [ "${BUILD_BEBBO_AMIGA6_PATCHES}" = "1" ]; then \
-      for p in /root/patches/bebbo-amiga6/*.patch; do \
-        if [ ! -f "$p" ]; then \
-          echo "missing Bebbo amiga6 patch files" >&2; \
-          exit 1; \
-        fi; \
-        patch --forward --batch -d projects/gcc -p1 -i "$p"; \
-      done; \
+      grep -q 'CODEX_AMIGA_LTO_PLUGINS' Makefile; \
     fi && \
     make -j $(nproc) all NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
     make -j $(nproc) zlib NDK=${NDK} \
@@ -238,4 +202,3 @@ ENV PATH=/opt/amiga/bin:$PATH
 LABEL gcc.version="${BUILD_GCC_VERSION}"
 LABEL gcc.branch="${BUILD_GCC_BRANCH}"
 LABEL gcc.amiga_lto="${BUILD_AMIGA_LTO}"
-LABEL gcc.bebbo_amiga6_patches="${BUILD_BEBBO_AMIGA6_PATCHES}"
