@@ -26,6 +26,14 @@ git -c advice.detachedHead=false clone --quiet --depth 1 \
   https://github.com/adtools/flexcat.git "${workdir}/flexcat"
 patch --batch --forward -d "${workdir}/flexcat" -p1 \
   -i "${SCRIPT_DIR}/patches/flexcat-portable-host-build.patch"
+cp "${workdir}/flexcat/src/FlexCat_cat_other.h" \
+  "${workdir}/flexcat/src/FlexCat_cat.h"
+cp "${workdir}/flexcat/src/locale_other.c" \
+  "${workdir}/flexcat/src/locale.c"
+touch "${workdir}/flexcat/src/FlexCat_cat.h" \
+  "${workdir}/flexcat/src/FlexCat_cat_other.h" \
+  "${workdir}/flexcat/src/locale.c" \
+  "${workdir}/flexcat/src/locale_other.c"
 make -C "${workdir}/flexcat/src" "${make_args[@]}"
 
 mkdir -p "${prefix}/bin"
