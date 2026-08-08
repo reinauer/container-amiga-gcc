@@ -1,35 +1,40 @@
 diff --git a/newlib/libc/sys/amigaos/Makefile.am b/newlib/libc/sys/amigaos/Makefile.am
-index 68644599c..7f0f6c216 100644
+index a0afebb..d8a0801 100644
 --- a/newlib/libc/sys/amigaos/Makefile.am
 +++ b/newlib/libc/sys/amigaos/Makefile.am
-@@ -19,7 +19,7 @@ isinf.c isnan.c \
- isinf.c isnan.c \
- cxxglue.c __dosbase.c __unorddf2.c __mathieeedoubbas.c \
+@@ -17,3 +17,3 @@ cxxglue.c __dosbase.c __unorddf2.c __mathieeedoubbas.c \
  abort.c basename.c dirname.c __nocommandline.c uname.c \
 -malloc.cpp clock.c
 +malloc.cpp clock.c statvfs.c
  
- #syscalls.c trap.S creat.c
- lib_a_CCASFLAGS = $(AM_CCASFLAGS)
 diff --git a/newlib/libc/sys/amigaos/Makefile.in b/newlib/libc/sys/amigaos/Makefile.in
-index 2e3563d4d..2152dd62e 100644
+index b4f3691..34877d5 100644
 --- a/newlib/libc/sys/amigaos/Makefile.in
 +++ b/newlib/libc/sys/amigaos/Makefile.in
-@@ -230,7 +230,7 @@ __cmpxf2.c  __divsi3.c  __extendsfdf2.c  __fixunsdfsi.c  __floatsisf.c   __muld
- isinf.c isnan.c \
- __dosbase.c __unorddf2.c __mathieeedoubbas.c cxxglue.c \
+@@ -95 +95,2 @@ am_lib_a_OBJECTS = lib_a-dummy.$(OBJEXT) lib_a-open.$(OBJEXT) \
+-	lib_a-clock.$(OBJEXT) clock.$(OBJEXT)
++	lib_a-clock.$(OBJEXT) clock.$(OBJEXT) \
++	lib_a-statvfs.$(OBJEXT)
+@@ -232,3 +233,3 @@ __dosbase.c __unorddf2.c __mathieeedoubbas.c cxxglue.c \
  abort.c basename.c dirname.c __nocommandline.c uname.c \
 -malloc.cpp clock.c
 +malloc.cpp clock.c statvfs.c
  
+@@ -538,2 +539,8 @@ lib_a-clock.obj: clock.c
  
- #syscalls.c trap.S creat.c
++lib_a-statvfs.o: statvfs.c
++	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-statvfs.o `test -f 'statvfs.c' || echo '$(srcdir)/'`statvfs.c
++
++lib_a-statvfs.obj: statvfs.c
++	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-statvfs.obj `if test -f 'statvfs.c'; then $(CYGPATH_W) 'statvfs.c'; else $(CYGPATH_W) '$(srcdir)/statvfs.c'; fi`
++
+ .cpp.o:
 diff --git a/newlib/libc/sys/amigaos/include/sys/statvfs.h b/newlib/libc/sys/amigaos/include/sys/statvfs.h
 new file mode 100644
 index 000000000..15498af66
 --- /dev/null
 +++ b/newlib/libc/sys/amigaos/include/sys/statvfs.h
-@@ -0,0 +1,38 @@
+@@ -0,0 +1,42 @@
 +#ifndef _SYS_STATVFS_H
 +#define _SYS_STATVFS_H
 +
@@ -77,7 +82,7 @@ new file mode 100644
 index 000000000..ee0e4767e
 --- /dev/null
 +++ b/newlib/libc/sys/amigaos/statvfs.c
-@@ -0,0 +1,87 @@
+@@ -0,0 +1,94 @@
 +#include <errno.h>
 +#include <string.h>
 +#include <dos/dos.h>
