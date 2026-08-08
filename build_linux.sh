@@ -830,6 +830,7 @@ build_gcc_version() {
   log "Installing target zlib for GCC ${version}"
   make_amiga_parallel "$src" zlib NDK="$ndk" \
     PREFIX="${prefix}/m68k-amigaos" \
+    PATH="${prefix}/bin:${PATH}" \
     AR="${prefix}/bin/m68k-amigaos-ar" ARFLAGS=rcs \
     RANLIB="${prefix}/bin/m68k-amigaos-ranlib"
   verify_default_libstubs_archive "$prefix"

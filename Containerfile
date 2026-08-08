@@ -97,6 +97,7 @@ RUN NDK=${NDK_VERSION:-3.2} && \
     make -j $(nproc) all NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
     make -j $(nproc) zlib NDK=${NDK} \
       PREFIX=/opt/amiga-${BUILD_GCC_VERSION}/m68k-amigaos \
+      PATH=/opt/amiga-${BUILD_GCC_VERSION}/bin:${PATH} \
       AR=/opt/amiga-${BUILD_GCC_VERSION}/bin/m68k-amigaos-ar \
       ARFLAGS=rcs \
       RANLIB=/opt/amiga-${BUILD_GCC_VERSION}/bin/m68k-amigaos-ranlib && \
