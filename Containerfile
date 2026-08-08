@@ -87,6 +87,7 @@ RUN NDK=${NDK_VERSION:-3.2} && \
     patch --forward --batch -d projects/libnix -p1 -i /root/patches/libnix-libnix4-no-linker-plugin.patch && \
     patch --forward --batch -d projects/newlib-cygwin -p1 -i /root/patches/newlib-amigaos-statvfs.patch && \
     patch --forward --batch -d projects/libnix -p1 -i /root/patches/libnix-amigaos-statvfs.patch && \
+    patch --forward --batch -p1 -i /root/patches/amiga-gcc-zlib-68060.patch && \
     if [ "${BUILD_GCC_VERSION}" = "16.1" ]; then \
       patch --forward --batch -d projects/gcc -p1 -i /root/patches/gcc16-m68k-mult-cost.patch; \
     fi && \

@@ -1,0 +1,10 @@
+diff --git a/Makefile b/Makefile
+index b751734..338e6ef 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1152,0 +1153 @@ MULTI = MODNAME/.: \
++		MODNAME/libm060:-m68060 \
+@@ -1155,0 +1157 @@ MULTI = MODNAME/.: \
++		MODNAME/libb/libm060:-fbaserel_-m68060 \
+@@ -1157,0 +1160 @@ MULTI = MODNAME/.: \
++		MODNAME/libb32/libm060:-fbaserel32_-m68060 \

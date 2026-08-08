@@ -874,6 +874,8 @@ build_gcc_version() {
   make_amiga "$src" branch branch="$branch" mod=gcc
   patch_zlib_download "$src"
   make_amiga "$src" update NDK="$ndk"
+  apply_patch_file "$src" \
+    "${SCRIPT_DIR}/patches/amiga-gcc-zlib-68060.patch"
   patch_libdebug_ordering "$src"
   patch_newlib_binutils_ordering "$src"
   reset_variant_build_dir "$src" "$prefix"
