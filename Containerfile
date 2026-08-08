@@ -131,11 +131,20 @@ RUN NDK=${NDK_VERSION:-3.2} && \
       done; \
     fi && \
     make -j $(nproc) all NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
-    make -j $(nproc) zlib NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
-    file "/opt/amiga-${BUILD_GCC_VERSION}/m68k-amigaos/lib/libstubs.a" \
-      | grep 'AmigaOS object/library data' >/dev/null && \
+    make -j $(nproc) zlib NDK=${NDK} \
+      PREFIX=/opt/amiga-${BUILD_GCC_VERSION}/m68k-amigaos \
+      AR=/opt/amiga-${BUILD_GCC_VERSION}/bin/m68k-amigaos-ar \
+      ARFLAGS=rcs \
+      RANLIB=/opt/amiga-${BUILD_GCC_VERSION}/bin/m68k-amigaos-ranlib && \
+    LIBSTUBS="/opt/amiga-${BUILD_GCC_VERSION}/m68k-amigaos/lib/libstubs.a" && \
+    if ! file "$LIBSTUBS" | grep 'AmigaOS object/library data' >/dev/null; then \
+      FIRST_MEMBER="$(/opt/amiga-${BUILD_GCC_VERSION}/bin/m68k-amigaos-ar t "$LIBSTUBS" | sed -n '1p')"; \
+      test -n "$FIRST_MEMBER"; \
+      /opt/amiga-${BUILD_GCC_VERSION}/bin/m68k-amigaos-ar p "$LIBSTUBS" "$FIRST_MEMBER" \
+        | file - | grep 'AmigaOS object/library data' >/dev/null; \
+    fi && \
     "/opt/amiga-${BUILD_GCC_VERSION}/bin/m68k-amigaos-nm" \
-      "/opt/amiga-${BUILD_GCC_VERSION}/m68k-amigaos/lib/libstubs.a" \
+      "$LIBSTUBS" \
       | grep ' _DOSBase$' >/dev/null
 
 # Install all SDKs

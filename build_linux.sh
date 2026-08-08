@@ -811,12 +811,20 @@ patch_amiga_lto_sources() {
 verify_default_libstubs_archive() {
   local prefix="$1"
   local installed="${prefix}/m68k-amigaos/lib/libstubs.a"
+  local ar="${prefix}/bin/m68k-amigaos-ar"
   local nm="${prefix}/bin/m68k-amigaos-nm"
+  local first_member
 
   [[ -f "$installed" ]] || die "installed libstubs archive missing: ${installed}"
   if command -v file >/dev/null 2>&1; then
-    file "$installed" | grep 'AmigaOS object/library data' >/dev/null \
-      || die "installed libstubs archive is not Amiga HUNK format: ${installed}"
+    if ! file "$installed" | grep 'AmigaOS object/library data' >/dev/null; then
+      first_member="$("$ar" t "$installed" | sed -n '1p')"
+      [[ -n "$first_member" ]] \
+        || die "installed libstubs archive has no members: ${installed}"
+      "$ar" p "$installed" "$first_member" | file - \
+        | grep 'AmigaOS object/library data' >/dev/null \
+        || die "installed libstubs archive has non-HUNK members: ${installed}"
+    fi
   fi
   "$nm" "$installed" | grep ' _DOSBase$' >/dev/null \
     || die "installed libstubs archive does not expose _DOSBase"
@@ -896,7 +904,10 @@ build_gcc_version() {
   fi
   make_amiga_parallel "$src" all NDK="$ndk" PREFIX="$prefix"
   log "Installing target zlib for GCC ${version}"
-  make_amiga_parallel "$src" zlib NDK="$ndk" PREFIX="$prefix"
+  make_amiga_parallel "$src" zlib NDK="$ndk" \
+    PREFIX="${prefix}/m68k-amigaos" \
+    AR="${prefix}/bin/m68k-amigaos-ar" ARFLAGS=rcs \
+    RANLIB="${prefix}/bin/m68k-amigaos-ranlib"
   verify_default_libstubs_archive "$prefix"
 
   log "Installing SDKs for GCC ${version}"
