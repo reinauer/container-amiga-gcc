@@ -3,39 +3,63 @@
 # ---
 # This script builds and pushes Docker images for multiple GCC versions
 # with interactive confirmation steps.
-# A function `ask_and_run` is defined to prompt the user before executing a command.
 # ---
 
-# --- Parse command line arguments ---
+usage() {
+    cat <<EOF
+Usage: $0 [OPTIONS]
+
+Build and push Docker images for multiple GCC versions.
+
+Options:
+  -n, --no-skip              Run all steps without prompting
+  -r, --repository REPO      Publish to REPO instead of
+                              docker.io/stefanreinauer/amiga-gcc
+  -h, --help                 Show this help message
+EOF
+}
+
+# --- Configuration ---
+IMAGE_REPOSITORY="docker.io/stefanreinauer/amiga-gcc"
+LOCAL_IMAGE_NAME="amiga-gcc"
+DOCKER_CLI="${DOCKER_CLI:-docker}"
 NO_SKIP=false
-for arg in "$@"; do
-    case "$arg" in
+
+# --- Parse command line arguments ---
+while [ "$#" -gt 0 ]; do
+    case "$1" in
         -n|--no-skip)
             NO_SKIP=true
             ;;
+        -r|--repository)
+            if [ "$#" -lt 2 ]; then
+                echo "Missing value for $1" >&2
+                usage >&2
+                exit 1
+            fi
+            IMAGE_REPOSITORY="$2"
+            shift
+            ;;
+        --repository=*)
+            IMAGE_REPOSITORY="${1#*=}"
+            ;;
         -h|--help)
-            echo "Usage: $0 [OPTIONS]"
-            echo ""
-            echo "Build and push Docker images for multiple GCC versions."
-            echo ""
-            echo "Options:"
-            echo "  -n, --no-skip    Run all steps without prompting"
-            echo "  -h, --help       Show this help message"
+            usage
             exit 0
             ;;
         *)
-            echo "Unknown option: $arg"
-            echo "Usage: $0 [OPTIONS]"
-            echo "Try '$0 --help' for more information."
+            echo "Unknown option: $1" >&2
+            usage >&2
             exit 1
             ;;
     esac
+    shift
 done
 
-# --- Configuration ---
-# Change these variables to match your Docker Hub username and image name.
-DOCKER_USER="stefanreinauer"
-IMAGE_NAME="amiga-gcc"
+if [ -z "$IMAGE_REPOSITORY" ]; then
+    echo "Image repository must not be empty." >&2
+    exit 1
+fi
 
 # Define GCC versions, branches, and whether to enable Amiga LTO.  Keep this
 # compatible with macOS /bin/bash 3.2, which does not support associative
@@ -46,53 +70,48 @@ GCC_VERSION_SPECS=(
     "16.1:amiga16.1:1"
 )
 
+LATEST_GCC_VERSION="6.5.0b"
 
-# Function to prompt the user and execute a command based on their input.
-#
-# @param {string} cmd - The command to be executed.
-#
+# Prompt the user, then execute the command without reparsing its arguments.
 ask_and_run() {
-    # The command to be executed is passed as the first argument.
-    local cmd="$1"
     local response
 
-    # Prompt the user with the command and ask for confirmation.
-    # -p: Display the prompt on the same line without a trailing newline.
-    # -r: Prevents backslash from acting as an escape character.
+    printf 'Next step: ->'
+    printf ' %q' "$@"
+    printf ' <-'
+
     if [ "$NO_SKIP" = true ]; then
-        echo "Next step: -> ${cmd} <-"
+        echo
         response="N"
     else
-        read -p "Next step: -> ${cmd} <- Skip? [yN] " -r response
+        printf ' Skip? [yN] '
+        IFS= read -r response
     fi
 
-    # Use a case statement to check the user's input.
     case "$response" in
         [yY])
-            # If the user enters 'y' or 'Y', skip the command.
             echo "Skipping step."
             ;;
         *)
-            # For any other input, including just pressing Enter (empty response),
-            # execute the command.
             echo "Executing..."
-            if eval "${cmd}"; then
+            if "$@"; then
                 echo "Step completed successfully."
             else
-                # If the command fails, print an error and exit the script.
                 echo "Error during execution. Aborting."
                 exit 1
             fi
             ;;
     esac
-    # Add a newline for better readability between steps.
     echo
 }
 
 # Get the current date in YYYYMMDD format.
-DATE=$(date +%Y%m%d)
-# Run sth like 'echo "-4" > .extra' if you would like to add an extra field to the version.
-EXTRA=$(cat .extra 2>/dev/null)
+BUILD_DATE=$(date +%Y%m%d)
+# Write a value such as "-4" to .extra to append it to dated tags.
+EXTRA=""
+if [ -f .extra ]; then
+    IFS= read -r EXTRA < .extra || true
+fi
 
 # --- Build and push each GCC version ---
 for GCC_VERSION_SPEC in "${GCC_VERSION_SPECS[@]}"; do
@@ -107,43 +126,35 @@ for GCC_VERSION_SPEC in "${GCC_VERSION_SPECS[@]}"; do
     echo
 
     # Define tags for this version
-    LOCAL_TAG="${IMAGE_NAME}:gcc-v${GCC_VERSION}-${DATE}${EXTRA}"
-    TAG_GCC_VERSION="${DOCKER_USER}/${IMAGE_NAME}:gcc-v${GCC_VERSION}"
-    TAG_GCC_VERSION_DATE="${DOCKER_USER}/${IMAGE_NAME}:gcc-v${GCC_VERSION}-${DATE}${EXTRA}"
-
-    # Build with build arguments
-    CMD_BUILD="docker build --build-arg BUILD_GCC_BRANCH=${GCC_BRANCH} --build-arg BUILD_GCC_VERSION=${GCC_VERSION} --build-arg BUILD_AMIGA_LTO=${BUILD_AMIGA_LTO} -t ${LOCAL_TAG} ."
-    CMD_TAG_VERSION="docker tag ${LOCAL_TAG} ${TAG_GCC_VERSION}"
-    CMD_TAG_VERSION_DATE="docker tag ${LOCAL_TAG} ${TAG_GCC_VERSION_DATE}"
-    CMD_PUSH_VERSION="docker push ${TAG_GCC_VERSION}"
-    CMD_PUSH_VERSION_DATE="docker push ${TAG_GCC_VERSION_DATE}"
+    LOCAL_TAG="${LOCAL_IMAGE_NAME}:gcc-v${GCC_VERSION}-${BUILD_DATE}${EXTRA}"
+    TAG_GCC_VERSION="${IMAGE_REPOSITORY}:gcc-v${GCC_VERSION}"
+    TAG_GCC_VERSION_DATE="${IMAGE_REPOSITORY}:gcc-v${GCC_VERSION}-${BUILD_DATE}${EXTRA}"
 
     # Execute commands for this version
-    ask_and_run "${CMD_BUILD}"
-    ask_and_run "${CMD_TAG_VERSION}"
-    ask_and_run "${CMD_TAG_VERSION_DATE}"
-    ask_and_run "${CMD_PUSH_VERSION}"
-    ask_and_run "${CMD_PUSH_VERSION_DATE}"
+    ask_and_run "$DOCKER_CLI" build \
+        --build-arg "BUILD_GCC_BRANCH=${GCC_BRANCH}" \
+        --build-arg "BUILD_GCC_VERSION=${GCC_VERSION}" \
+        --build-arg "BUILD_AMIGA_LTO=${BUILD_AMIGA_LTO}" \
+        -t "$LOCAL_TAG" .
+    ask_and_run "$DOCKER_CLI" tag "$LOCAL_TAG" "$TAG_GCC_VERSION"
+    ask_and_run "$DOCKER_CLI" tag "$LOCAL_TAG" "$TAG_GCC_VERSION_DATE"
+    ask_and_run "$DOCKER_CLI" push "$TAG_GCC_VERSION"
+    ask_and_run "$DOCKER_CLI" push "$TAG_GCC_VERSION_DATE"
 
     echo
 done
 
-#LATEST="13.4"
-#LATEST="15.2"
-#LATEST="16.1"
-LATEST="6.5.0b"
-
 # Optionally tag one of the currently built GCC versions as 'latest'
 echo "========================================"
-echo "Tagging GCC ${LATEST} as 'latest'"
+echo "Tagging GCC ${LATEST_GCC_VERSION} as 'latest'"
 echo "========================================"
 echo
 
-CMD_TAG_LATEST="docker tag ${IMAGE_NAME}:gcc-v${LATEST}-${DATE}${EXTRA} ${DOCKER_USER}/${IMAGE_NAME}:latest"
-CMD_PUSH_LATEST="docker push ${DOCKER_USER}/${IMAGE_NAME}:latest"
+LOCAL_LATEST_TAG="${LOCAL_IMAGE_NAME}:gcc-v${LATEST_GCC_VERSION}-${BUILD_DATE}${EXTRA}"
+LATEST_TAG="${IMAGE_REPOSITORY}:latest"
 
-ask_and_run "${CMD_TAG_LATEST}"
-ask_and_run "${CMD_PUSH_LATEST}"
+ask_and_run "$DOCKER_CLI" tag "$LOCAL_LATEST_TAG" "$LATEST_TAG"
+ask_and_run "$DOCKER_CLI" push "$LATEST_TAG"
 
 echo
 echo "Script finished."

@@ -5,6 +5,8 @@
 This container is based on work by Sebastian Bergmann: [Docker Hub](https://hub.docker.com/r/sebastianbergmann/amiga-gcc/).
 
 A ready-to-use image built from this Containerfile is available on [Docker Hub](https://hub.docker.com/r/stefanreinauer/amiga-gcc/).
+Docker Hub is the canonical image location.  The publish workflow mirrors the
+same version tags to this repository's GitHub Container Registry package.
 
 More information can be found [here](https://amiga.sebastian-bergmann.de/presentations/2017/evoke/amiga-software-development-in-2017).
 
@@ -80,4 +82,3 @@ $ podman run -v $HOME:/host stefanreinauer/amiga-gcc \
   vamos -C 68020 /host/hello
 Hello world!
 ```
-
