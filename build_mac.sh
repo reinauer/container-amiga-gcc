@@ -695,23 +695,38 @@ patch_amiga_statvfs_sources() {
   local src="$1"
   local build_dir="${src}/build-$(uname -s)-m68k-amigaos"
   local gcc_build="${build_dir}/gcc"
+  local support_present=0
+
+  if grep -Fq 'int statvfs(' \
+      "${src}/projects/newlib-cygwin/newlib/libc/sys/amigaos/include/sys/statvfs.h" 2>/dev/null \
+    && [[ -f "${src}/projects/newlib-cygwin/newlib/libc/sys/amigaos/statvfs.c" ]] \
+    && grep -Fq 'int statvfs(' \
+      "${src}/projects/libnix/sources/headers/sys/statvfs.h" 2>/dev/null \
+    && [[ -f "${src}/projects/libnix/sources/nix/stdio/statvfs.c" ]]; then
+    support_present=1
+  fi
 
   log "Patching AmigaOS statvfs support"
   apply_patch_file "$src/projects/newlib-cygwin" "${SCRIPT_DIR}/patches/newlib-amigaos-statvfs.patch"
   apply_patch_file "$src/projects/libnix" "${SCRIPT_DIR}/patches/libnix-amigaos-statvfs.patch"
 
-  rm -f "${build_dir}/newlib/_done" "${build_dir}/newlib/newlib/libc.a"
-  rm -f "${build_dir}/libnix/_done"
-  if [[ -d "$gcc_build" ]]; then
-    find "$gcc_build" -name config.cache -type f -exec rm -f {} +
+  if [[ "$support_present" -eq 0 ]]; then
+    safe_remove_source "${build_dir}/newlib/newlib"
+    safe_remove_source "${build_dir}/libnix"
+    rm -f "${build_dir}/newlib/_done"
+    if [[ -d "$gcc_build" ]]; then
+      find "$gcc_build" -name config.cache -type f -exec rm -f {} +
+    fi
+    rm -f "${gcc_build}/Makefile" "${gcc_build}/_done"
   fi
-  rm -f "${gcc_build}/Makefile" "${gcc_build}/_done"
 }
 
 patch_filesysbox_statvfs_sources() {
   local src="$1"
+  local prefix="$2"
   local filesysbox="${src}/projects/filesysbox"
   local build_filesysbox="${src}/build/filesysbox"
+  local installed_header="${prefix}/m68k-amigaos/include/sys/statvfs.h"
 
   if [[ ! -d "${filesysbox}/.git" ]]; then
     log "Cloning filesysbox SDK source"
@@ -720,6 +735,12 @@ patch_filesysbox_statvfs_sources() {
 
   log "Patching filesysbox statvfs prototype"
   apply_patch_file "$filesysbox" "${SCRIPT_DIR}/patches/filesysbox-statvfs-prototype.patch"
+
+  if [[ -f "$installed_header" ]] \
+    && ! grep -Fq 'int statvfs(' "$installed_header"; then
+    log "Removing stale filesysbox statvfs header from ${prefix}"
+    rm -f "$installed_header"
+  fi
 
   if [[ -d "$build_filesysbox" ]]; then
     safe_remove_source "$build_filesysbox"
@@ -749,7 +770,8 @@ apply_patch_file() {
 
   if reverse_output="$(
     cd "$dir"
-    "$PATCH_BIN" --reverse --dry-run --batch -p1 -i "$patch_file" 2>&1
+    "$PATCH_BIN" --reverse --force --dry-run --batch -p1 \
+      -i "$patch_file" 2>&1
   )"; then
     case "$reverse_output" in
       *"Ignoring -R"*|*"Unreversed"*) ;;
@@ -901,6 +923,7 @@ build_gcc_version() {
   patch_libnix_archive_sources "$src"
   patch_libnix_link_sources "$src"
   patch_amiga_statvfs_sources "$src"
+  patch_filesysbox_statvfs_sources "$src" "$prefix"
   patch_gcc15_libnix_sources "$src"
   if [[ "$version" == "16.1" ]]; then
     patch_gcc16_sources "$src"
@@ -915,8 +938,6 @@ build_gcc_version() {
   log "Installing target zlib for GCC ${version}"
   make_amiga_parallel "$src" zlib NDK="$ndk" PREFIX="$prefix"
   verify_default_libstubs_archive "$prefix"
-
-  patch_filesysbox_statvfs_sources "$src"
 
   log "Installing SDKs for GCC ${version}"
   for sdk in "${SDKS[@]}"; do
