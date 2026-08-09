@@ -17,7 +17,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install all packages
 RUN apt-get -y update && \
     apt-get -y install \
-      apt-utils curl file git python3 python3-pip srecord \
+      apt-utils ca-certificates curl file git python3 python3-pip srecord \
       wget autoconf automake bison flex g++ gcc gettext git libgmpxx4ldbl libgmp-dev \
       libmpfr6 libmpfr-dev libmpc3 libmpc-dev libncurses-dev make patch perl rsync \
       texinfo zip
@@ -112,9 +112,23 @@ RUN NDK=${NDK_VERSION:-3.2} && \
       "$LIBSTUBS" \
       | grep ' _DOSBase$' >/dev/null
 
-# Install all SDKs
+# Install all SDKs. The CDTV host omits its issuing CA chain, so pin its
+# archive before the upstream installer runs. This preserves integrity for
+# the HTTP fallback without disabling TLS verification.
 RUN NDK=${NDK_VERSION:-3.2} && \
     cd /root/amiga-gcc && \
+    CDTV_ARCHIVE=download/CDTV_DeveloperKit.lha && \
+    CDTV_ARCHIVE_TMP=${CDTV_ARCHIVE}.tmp && \
+    rm -f "${CDTV_ARCHIVE_TMP}" && \
+    (curl -LfsS --connect-timeout 10 \
+        https://www.cd32-allianz.de/downloads/software/CDTV_DeveloperKit.lha \
+        -o "${CDTV_ARCHIVE_TMP}" || \
+      curl -LfsS --connect-timeout 10 --retry 3 \
+        http://www.cd32-allianz.de/downloads/software/CDTV_DeveloperKit.lha \
+        -o "${CDTV_ARCHIVE_TMP}") && \
+    echo "5497a8fefca8ade4a509f655eb4a4b3737b9652c16d8cdf934c76fe2dfbe0674  ${CDTV_ARCHIVE_TMP}" \
+      | sha256sum --check --strict && \
+    mv "${CDTV_ARCHIVE_TMP}" "${CDTV_ARCHIVE}" && \
     if [ ! -d projects/filesysbox/.git ]; then \
       git clone --branch V54.7 --single-branch \
         https://github.com/salass00/filesysbox projects/filesysbox; \
