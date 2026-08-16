@@ -646,63 +646,6 @@ patch_gcc15_libnix_sources() {
   fi
 }
 
-patch_libnix_findtooltype_sources() {
-  local src="$1"
-  local libnix_build="${src}/build-$(uname -s)-m68k-amigaos/libnix"
-
-  log "Patching libnix FindToolType const-correctness"
-  apply_patch_file "$src/projects/libnix" "${SCRIPT_DIR}/patches/libnix-findtooltype-const.patch"
-  rm -f "${libnix_build}/_done"
-}
-
-patch_libnix_archive_sources() {
-  local src="$1"
-  local libnix_build="${src}/build-$(uname -s)-m68k-amigaos/libnix"
-
-  log "Patching libnix archive target selection"
-  apply_patch_file "$src/projects/libnix" "${SCRIPT_DIR}/patches/libnix-amigaos-ar-target.patch"
-  rm -f "${libnix_build}/_done"
-}
-
-patch_libnix_link_sources() {
-  local src="$1"
-  local libnix_build="${src}/build-$(uname -s)-m68k-amigaos/libnix"
-
-  log "Patching libnix4 linker plugin use"
-  apply_patch_file "$src/projects/libnix" "${SCRIPT_DIR}/patches/libnix-libnix4-no-linker-plugin.patch"
-  rm -f "${libnix_build}/_done" "${libnix_build}/libb/libnix4.library"
-}
-
-patch_amiga_statvfs_sources() {
-  local src="$1"
-  local build_dir="${src}/build-$(uname -s)-m68k-amigaos"
-  local gcc_build="${build_dir}/gcc"
-  local support_present=0
-
-  if grep -Fq 'int statvfs(' \
-      "${src}/projects/newlib-cygwin/newlib/libc/sys/amigaos/include/sys/statvfs.h" 2>/dev/null \
-    && [[ -f "${src}/projects/newlib-cygwin/newlib/libc/sys/amigaos/statvfs.c" ]] \
-    && grep -Fq 'int statvfs(' \
-      "${src}/projects/libnix/sources/headers/sys/statvfs.h" 2>/dev/null \
-    && [[ -f "${src}/projects/libnix/sources/nix/stdio/statvfs.c" ]]; then
-    support_present=1
-  fi
-
-  log "Patching AmigaOS statvfs support"
-  apply_patch_file "$src/projects/newlib-cygwin" "${SCRIPT_DIR}/patches/newlib-amigaos-statvfs.patch"
-  apply_patch_file "$src/projects/libnix" "${SCRIPT_DIR}/patches/libnix-amigaos-statvfs.patch"
-
-  if [[ "$support_present" -eq 0 ]]; then
-    safe_remove_source "${build_dir}/newlib/newlib"
-    safe_remove_source "${build_dir}/libnix"
-    rm -f "${build_dir}/newlib/_done"
-    if [[ -d "$gcc_build" ]]; then
-      find "$gcc_build" -name config.cache -type f -exec rm -f {} +
-    fi
-    rm -f "${gcc_build}/Makefile" "${gcc_build}/_done"
-  fi
-}
-
 patch_filesysbox_statvfs_sources() {
   local src="$1"
   local prefix="$2"
@@ -848,10 +791,6 @@ build_gcc_version() {
   patch_libdebug_ordering "$src"
   patch_newlib_binutils_ordering "$src"
   reset_variant_build_dir "$src" "$prefix"
-  patch_libnix_findtooltype_sources "$src"
-  patch_libnix_archive_sources "$src"
-  patch_libnix_link_sources "$src"
-  patch_amiga_statvfs_sources "$src"
   patch_filesysbox_statvfs_sources "$src" "$prefix"
   patch_gcc15_libnix_sources "$src"
   if [[ "$ENABLE_AMIGA_LTO" -eq 1 ]]; then
