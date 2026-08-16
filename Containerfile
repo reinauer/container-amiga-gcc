@@ -69,15 +69,6 @@ RUN NDK=${NDK_VERSION:-3.2} && \
       perl -0pi -e 's~(/\* convert long double to double \*/\ndouble\n__truncxfdf2)~#if !defined(__GNUC__) || __GNUC__ < 15\n#define CODEX_GCC15_LIBNIX_TRUNCXFDF2 1\n$1~' "$cmpxf2"; \
       perl -0pi -e 's~(\nextern int __cmpdf2 \(double x1, double x2\);)~\n#endif /* !defined(__GNUC__) || __GNUC__ < 15 */\n$1~' "$cmpxf2"; \
     fi && \
-    if patch --reverse --dry-run --force -d projects/libnix -p1 -i /root/patches/libnix-findtooltype-const.patch >/dev/null 2>&1; then \
-      echo "libnix FindToolType patch already applied"; \
-    else \
-      patch --forward --batch -d projects/libnix -p1 -i /root/patches/libnix-findtooltype-const.patch; \
-    fi && \
-    patch --forward --batch -d projects/libnix -p1 -i /root/patches/libnix-amigaos-ar-target.patch && \
-    patch --forward --batch -d projects/libnix -p1 -i /root/patches/libnix-libnix4-no-linker-plugin.patch && \
-    patch --forward --batch -d projects/newlib-cygwin -p1 -i /root/patches/newlib-amigaos-statvfs.patch && \
-    patch --forward --batch -d projects/libnix -p1 -i /root/patches/libnix-amigaos-statvfs.patch && \
     patch --forward --batch -p1 -i /root/patches/amiga-gcc-zlib-68060.patch && \
     if ! grep -q 'CODEX_LIBDEBUG_AFTER_LIBGCC' Makefile; then \
       perl -0pi -e 's@(# libdebug\n)@$1# CODEX_LIBDEBUG_AFTER_LIBGCC\n@' Makefile; \
