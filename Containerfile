@@ -3,8 +3,8 @@ FROM ubuntu:25.10
 # Build arguments for configurable GCC branch
 #ARG BUILD_GCC_BRANCH=amiga13.4
 #ARG BUILD_GCC_VERSION=13.4
-#ARG BUILD_GCC_BRANCH=amiga16.1
-#ARG BUILD_GCC_VERSION=16.1
+#ARG BUILD_GCC_BRANCH=amiga16.2
+#ARG BUILD_GCC_VERSION=16.2
 ARG BUILD_GCC_BRANCH=amiga6
 ARG BUILD_GCC_VERSION=6.5.0b
 
@@ -52,9 +52,9 @@ RUN NDK=${NDK_VERSION:-3.2} && \
     cd /root/amiga-gcc && \
     if [ "${BUILD_AMIGA_LTO}" = "1" ]; then \
       case "${BUILD_GCC_VERSION}" in \
-        6.5.0b|13.4|16.1) ;; \
+        6.5.0b|13.4|16.2) ;; \
         *) \
-          echo "BUILD_AMIGA_LTO=1 currently requires BUILD_GCC_VERSION=6.5.0b, 13.4, or 16.1" >&2; \
+          echo "BUILD_AMIGA_LTO=1 currently requires BUILD_GCC_VERSION=6.5.0b, 13.4, or 16.2" >&2; \
           exit 1; \
           ;; \
       esac; \

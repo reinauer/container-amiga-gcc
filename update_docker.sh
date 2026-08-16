@@ -67,7 +67,7 @@ fi
 GCC_VERSION_SPECS=(
     "6.5.0b:amiga6:1"
     "13.4:amiga13.4:1"
-    "16.1:amiga16.1:1"
+    "16.2:amiga16.2:1"
 )
 
 LATEST_GCC_VERSION="6.5.0b"
