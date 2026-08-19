@@ -83,7 +83,7 @@ RUN NDK=${NDK_VERSION:-3.2} && \
     fi && \
     if [ "${BUILD_AMIGA_LTO}" = "1" ]; then \
       perl -0pi -e 's@ifneq \(m68k-elf,\$\(TARGET\)\)\nCONFIG_BINUTILS \+= --disable-plugins\nendif\n@CONFIG_BINUTILS += --enable-plugins # CODEX_AMIGA_LTO_PLUGINS\n@' Makefile && \
-      grep -q 'CODEX_AMIGA_LTO_PLUGINS' Makefile; \
+      grep -qE 'CODEX_AMIGA_LTO_PLUGINS|^CONFIG_BINUTILS \+= --enable-plugins' Makefile; \
     fi && \
     make -j $(nproc) all NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
     make -j $(nproc) zlib NDK=${NDK} \
