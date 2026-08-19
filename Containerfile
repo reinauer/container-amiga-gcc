@@ -127,16 +127,6 @@ RUN NDK=${NDK_VERSION:-3.2} && \
         | sha256sum --check --strict && \
       mv "${SDK_ARCHIVE_TMP}" "${SDK_ARCHIVE}" || exit 1; \
     done && \
-    if [ ! -d projects/filesysbox/.git ]; then \
-      git clone --branch V54.7 --single-branch \
-        https://github.com/salass00/filesysbox projects/filesysbox; \
-    fi && \
-    if patch --reverse --dry-run --force -d projects/filesysbox -p1 -i /root/patches/filesysbox-statvfs-prototype.patch >/dev/null 2>&1; then \
-      echo "filesysbox statvfs patch already applied"; \
-    else \
-      patch --forward --batch -d projects/filesysbox -p1 -i /root/patches/filesysbox-statvfs-prototype.patch; \
-    fi && \
-    rm -rf build/filesysbox && \
     make -j $(nproc) sdk=filesysbox NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
     make -j $(nproc) sdk=sdi NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
     make -j $(nproc) sdk=ahi NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
