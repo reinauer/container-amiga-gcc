@@ -79,7 +79,7 @@ Build Bebbo/AmigaPorts m68k-amigaos-gcc on Ubuntu Linux using the same high-leve
 steps as Containerfile.
 
 Defaults:
-  versions:       6.5.0b, 13.4, 16.1
+  versions:       6.5.0b, 13.4, 16.1, 16.2
   prefixes:       /opt/amiga-vVERSION-YYYYMMDD
   NDK:            3.2
   Amiga LTO:      enabled
@@ -90,7 +90,7 @@ Options:
   --version VERSION[:BRANCH] Build one version; repeat for multiple versions
                              Known versions: 13.4 -> amiga13.4,
                              6.5.0b -> amiga6, 15.2 -> amiga15.2,
-                             16.1 -> amiga16.1
+                             16.1 -> amiga16.1, 16.2 -> amiga16.2
   --prefix-root DIR          Install under DIR/TEMPLATE (default: /opt)
   --prefix DIR               Install a single requested version into DIR
   --prefix-template TEMPLATE Directory name under --prefix-root.
@@ -105,7 +105,7 @@ Options:
   --cxx PATH_OR_NAME         Host C++ compiler (default: prefer g++-15/g++)
   --enable-amiga-lto         Enable Amiga HUNK LTO support (default)
   --disable-amiga-lto        Disable Amiga HUNK LTO support
-                             LTO is supported for GCC 6.5.0b, 13.4, and 16.1.
+                             LTO is supported for GCC 6.5.0b, 13.4, 16.1 and 16.2.
   --skip-apt                 Do not install missing Ubuntu packages
   --skip-amitools            Do not create a local amitools Python venv
   --reuse-source             Reuse existing per-version source trees
@@ -121,7 +121,7 @@ Examples:
   ./build_linux.sh --version 13.4 --prefix /opt/amiga-13.4-lto
   ./build_linux.sh --version 6.5.0b --disable-amiga-lto
   ./build_linux.sh --cc gcc-12 --cxx g++-12
-  ./build_linux.sh --version 16.1 --prefix /opt/amiga-16.1-lto
+  ./build_linux.sh --version 16.2 --prefix /opt/amiga-16.2
   ./build_linux.sh --version 15.2:amiga15.2 --disable-amiga-lto --link-default 15.2
 EOF
 }
