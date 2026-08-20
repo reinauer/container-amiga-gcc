@@ -59,31 +59,12 @@ RUN NDK=${NDK_VERSION:-3.2} && \
           ;; \
       esac; \
     fi && \
-    sed -i -r 's#\S+/gcc#https://github.com/AmigaPorts/gcc#g' default-repos && \
-    perl -pi -e 's!\$\(ZLIB\)\.tar\.xz!\$\(ZLIB\).tar.gz!g; s!https://zlib\.net/\$\(ZLIB\)\.tar\.gz!https://zlib.net/fossils/\$\(ZLIB\).tar.gz!g' Makefile && \
     mkdir -p /opt/amiga-${BUILD_GCC_VERSION} && \
     make branch branch=${BUILD_GCC_BRANCH} mod=gcc && \
     make update NDK=${NDK} && \
-    cmpxf2=projects/libnix/sources/math/math/__cmpxf2.c && \
-    if [ -f "$cmpxf2" ] && ! grep -q 'CODEX_GCC15_LIBNIX_TRUNCXFDF2' "$cmpxf2"; then \
-      perl -0pi -e 's~(/\* convert long double to double \*/\ndouble\n__truncxfdf2)~#if !defined(__GNUC__) || __GNUC__ < 15\n#define CODEX_GCC15_LIBNIX_TRUNCXFDF2 1\n$1~' "$cmpxf2"; \
-      perl -0pi -e 's~(\nextern int __cmpdf2 \(double x1, double x2\);)~\n#endif /* !defined(__GNUC__) || __GNUC__ < 15 */\n$1~' "$cmpxf2"; \
-    fi && \
     patch --forward --batch -p1 -i /root/patches/amiga-gcc-zlib-68060.patch && \
-    if ! grep -q 'CODEX_LIBDEBUG_AFTER_LIBGCC' Makefile; then \
-      perl -0pi -e 's@(# libdebug\n)@$1# CODEX_LIBDEBUG_AFTER_LIBGCC\n@' Makefile; \
-    fi && \
-    if ! grep -Fq '$(BUILD)/libdebug/Makefile: $(BUILD)/gcc/_libgcc_done' Makefile; then \
-      LIBDEBUG_DEPS_LINE='$(BUILD)/libdebug/Makefile: $(BUILD)/gcc/_libgcc_done $(BUILD)/libnix/_done $(PROJECTS)/libdebug/configure $(shell find 2>/dev/null $(PROJECTS)/libdebug -not \( -path $(PROJECTS)/libdebug/.git -prune \) -type f)' \
-        perl -0pi -e 's@^\$\(BUILD\)/libdebug/Makefile:.*$@$ENV{LIBDEBUG_DEPS_LINE}@m' Makefile; \
-    fi && \
-    if ! grep -Fq '$(BUILD)/newlib/newlib/libc.a: $(BUILD)/newlib/newlib/Makefile $(BUILD)/binutils/_gdb' Makefile; then \
-      NEWLIB_DEPS_LINE='$(BUILD)/newlib/newlib/libc.a: $(BUILD)/newlib/newlib/Makefile $(BUILD)/binutils/_gdb $(NEWLIB_FILES)' \
-        perl -0pi -e 's@^\$\(BUILD\)/newlib/newlib/libc\.a:.*$@$ENV{NEWLIB_DEPS_LINE}@m' Makefile; \
-    fi && \
     if [ "${BUILD_AMIGA_LTO}" = "1" ]; then \
-      perl -0pi -e 's@ifneq \(m68k-elf,\$\(TARGET\)\)\nCONFIG_BINUTILS \+= --disable-plugins\nendif\n@CONFIG_BINUTILS += --enable-plugins # CODEX_AMIGA_LTO_PLUGINS\n@' Makefile && \
-      grep -qE 'CODEX_AMIGA_LTO_PLUGINS|^CONFIG_BINUTILS \+= --enable-plugins' Makefile; \
+      grep -qE '^CONFIG_BINUTILS \+= --enable-plugins' Makefile; \
     fi && \
     make -j $(nproc) all NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
     make -j $(nproc) zlib NDK=${NDK} \
