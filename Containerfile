@@ -39,7 +39,6 @@ RUN apt-get -y autoremove && \
     pip3 install -U \
       "amitools[vamos] @ git+https://github.com/cnvogelg/amitools.git"
 
-COPY vbcc.diff /root
 COPY patches /root/patches
 COPY install_additional_sdks.sh /root/install_additional_sdks.sh
 COPY install_flexcat.sh /root/install_flexcat.sh
@@ -140,7 +139,6 @@ RUN cd /root/amiga-gcc && \
 # Build vlink and vbcc
 RUN NDK=${NDK_VERSION:-3.2} && \
     cd /root/amiga-gcc && \
-    patch -p1 < ../vbcc.diff && \
     make -j $(nproc) vlink vbcc NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION}
 
 # Install a working VBCC
