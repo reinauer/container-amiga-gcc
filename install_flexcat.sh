@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-FLEXCAT_VERSION="2.18"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The adtools upstream is unmaintained and its last tag (2.18) predates
+# the Linux/host build fixes in the AmigaPorts fork. The pinned commit
+# is AmigaPorts master plus the host build fixes proposed as
+# AmigaPorts/flexcat#4; repoint to AmigaPorts once that PR merges.
+FLEXCAT_REPO="https://github.com/codewiz/flexcat.git"
+FLEXCAT_COMMIT="91783ef24c45af01bbc0efd9409e71a655e3585b"
 
 usage() {
   echo "Usage: $0 PREFIX" >&2
@@ -14,26 +18,15 @@ usage() {
 prefix="$1"
 workdir="$(mktemp -d "${TMPDIR:-/tmp}/flexcat.XXXXXX")"
 trap 'rm -rf "$workdir"' EXIT
-make_args=(HOST=Linux OS=unix CC="${CC:-cc}" DEBUG= DEBUGSYM=)
+make_args=(OS=unix CC="${CC:-cc}" DEBUG= DEBUGSYM=)
 
-if [[ "$(uname -s)" == "Darwin" ]]; then
-  make_args+=(LDLIBS=-liconv)
-fi
-
-echo "Building FlexCat ${FLEXCAT_VERSION} for the host"
-git -c advice.detachedHead=false clone --quiet --depth 1 \
-  --branch "$FLEXCAT_VERSION" \
-  https://github.com/adtools/flexcat.git "${workdir}/flexcat"
-patch --batch --forward -d "${workdir}/flexcat" -p1 \
-  -i "${SCRIPT_DIR}/patches/flexcat-portable-host-build.patch"
-cp "${workdir}/flexcat/src/FlexCat_cat_other.h" \
-  "${workdir}/flexcat/src/FlexCat_cat.h"
-cp "${workdir}/flexcat/src/locale_other.c" \
-  "${workdir}/flexcat/src/locale.c"
-touch "${workdir}/flexcat/src/FlexCat_cat.h" \
-  "${workdir}/flexcat/src/FlexCat_cat_other.h" \
-  "${workdir}/flexcat/src/locale.c" \
-  "${workdir}/flexcat/src/locale_other.c"
+echo "Building FlexCat ${FLEXCAT_COMMIT} for the host"
+git init --quiet "${workdir}/flexcat"
+git -C "${workdir}/flexcat" fetch --quiet --depth 1 \
+  "$FLEXCAT_REPO" "$FLEXCAT_COMMIT"
+git -C "${workdir}/flexcat" -c advice.detachedHead=false \
+  checkout --quiet FETCH_HEAD
+make -C "${workdir}/flexcat/src" "${make_args[@]}" bootstrap
 make -C "${workdir}/flexcat/src" "${make_args[@]}"
 
 mkdir -p "${prefix}/bin"
