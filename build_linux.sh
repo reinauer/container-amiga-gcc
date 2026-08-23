@@ -604,17 +604,6 @@ patch_zlib_download() {
   fi
 }
 
-patch_gcc15_libnix_sources() {
-  local src="$1"
-  local cmpxf2="${src}/projects/libnix/sources/math/math/__cmpxf2.c"
-
-  if [[ -f "$cmpxf2" ]] && ! grep -q 'CODEX_GCC15_LIBNIX_TRUNCXFDF2' "$cmpxf2"; then
-    log "Patching libnix __truncxfdf2 duplicate for GCC 15 libgcc"
-    perl -0pi -e 's~(/\* convert long double to double \*/\ndouble\n__truncxfdf2)~#if !defined(__GNUC__) || __GNUC__ < 15\n#define CODEX_GCC15_LIBNIX_TRUNCXFDF2 1\n$1~' "$cmpxf2"
-    perl -0pi -e 's~(\nextern int __cmpdf2 \(double x1, double x2\);)~\n#endif /* !defined(__GNUC__) || __GNUC__ < 15 */\n$1~' "$cmpxf2"
-  fi
-}
-
 apply_patch_file() {
   local dir="$1"
   local patch_file="$2"
@@ -733,7 +722,6 @@ build_gcc_version() {
   patch_libdebug_ordering "$src"
   patch_newlib_binutils_ordering "$src"
   reset_variant_build_dir "$src" "$prefix"
-  patch_gcc15_libnix_sources "$src"
   if [[ "$ENABLE_AMIGA_LTO" -eq 1 ]]; then
     enable_amiga_lto "$src"
   fi
