@@ -79,7 +79,7 @@ Build Bebbo/AmigaPorts m68k-amigaos-gcc on Ubuntu Linux using the same high-leve
 steps as Containerfile.
 
 Defaults:
-  versions:       6.5.0b, 13.4, 16.1, 16.2
+  versions:       6.5.0b, 13.4, 16.2
   prefixes:       /opt/amiga-vVERSION-YYYYMMDD
   NDK:            3.2
   Amiga LTO:      enabled
@@ -90,7 +90,7 @@ Options:
   --version VERSION[:BRANCH] Build one version; repeat for multiple versions
                              Known versions: 13.4 -> amiga13.4,
                              6.5.0b -> amiga6, 15.2 -> amiga15.2,
-                             16.1 -> amiga16.1, 16.2 -> amiga16.2
+                             16.2 -> amiga16.2
   --prefix-root DIR          Install under DIR/TEMPLATE (default: /opt)
   --prefix DIR               Install a single requested version into DIR
   --prefix-template TEMPLATE Directory name under --prefix-root.
@@ -105,7 +105,7 @@ Options:
   --cxx PATH_OR_NAME         Host C++ compiler (default: prefer g++-15/g++)
   --enable-amiga-lto         Enable Amiga HUNK LTO support (default)
   --disable-amiga-lto        Disable Amiga HUNK LTO support
-                             LTO is supported for GCC 6.5.0b, 13.4, 16.1 and 16.2.
+                             LTO is supported for GCC 6.5.0b, 13.4, and 16.2.
   --skip-apt                 Do not install missing Ubuntu packages
   --skip-amitools            Do not create a local amitools Python venv
   --reuse-source             Reuse existing per-version source trees
@@ -260,7 +260,7 @@ parse_args() {
   done
 
   if [[ ${#VERSION_SPECS[@]} -eq 0 ]]; then
-    VERSION_SPECS=("6.5.0b" "13.4" "16.1")
+    VERSION_SPECS=("6.5.0b" "13.4" "16.2")
   fi
 
   if [[ -n "$PREFIX_OVERRIDE" && ${#VERSION_SPECS[@]} -ne 1 ]]; then
@@ -271,8 +271,8 @@ parse_args() {
     local lto_spec
     for lto_spec in "${VERSION_SPECS[@]}"; do
       case "${lto_spec%%:*}" in
-        6.5.0b|13.4|16.1) ;;
-        *) die "Amiga LTO currently supports --version 6.5.0b, 13.4, or 16.1" ;;
+        6.5.0b|13.4|16.2) ;;
+        *) die "Amiga LTO currently supports --version 6.5.0b, 13.4, or 16.2" ;;
       esac
     done
   fi
@@ -312,7 +312,7 @@ branch_from_spec() {
     6.5.0b) printf '%s\n' "amiga6" ;;
     13.4) printf '%s\n' "amiga13.4" ;;
     15.2) printf '%s\n' "amiga15.2" ;;
-    16.1) printf '%s\n' "amiga16.1" ;;
+    16.2) printf '%s\n' "amiga16.2" ;;
     *) die "no branch mapping for GCC version ${version}; use --version ${version}:BRANCH" ;;
   esac
 }
@@ -615,32 +615,6 @@ patch_gcc15_libnix_sources() {
   fi
 }
 
-patch_filesysbox_statvfs_sources() {
-  local src="$1"
-  local prefix="$2"
-  local filesysbox="${src}/projects/filesysbox"
-  local build_filesysbox="${src}/build/filesysbox"
-  local installed_header="${prefix}/m68k-amigaos/include/sys/statvfs.h"
-
-  if [[ ! -d "${filesysbox}/.git" ]]; then
-    log "Cloning filesysbox SDK source"
-    git clone --branch V54.7 --single-branch https://github.com/salass00/filesysbox "$filesysbox"
-  fi
-
-  log "Patching filesysbox statvfs prototype"
-  apply_patch_file "$filesysbox" "${SCRIPT_DIR}/patches/filesysbox-statvfs-prototype.patch"
-
-  if [[ -f "$installed_header" ]] \
-    && ! grep -Fq 'int statvfs(' "$installed_header"; then
-    log "Removing stale filesysbox statvfs header from ${prefix}"
-    rm -f "$installed_header"
-  fi
-
-  if [[ -d "$build_filesysbox" ]]; then
-    safe_remove_source "$build_filesysbox"
-  fi
-}
-
 apply_patch_file() {
   local dir="$1"
   local patch_file="$2"
@@ -678,14 +652,11 @@ enable_amiga_lto() {
   local src="$1"
   local makefile="${src}/Makefile"
 
-  log "Enabling Amiga HUNK LTO support"
+  log "Checking Amiga HUNK LTO support"
 
-  if [[ -f "$makefile" ]] && ! grep -q 'CODEX_AMIGA_LTO_PLUGINS' "$makefile"; then
-    perl -0pi -e 's@ifneq \(m68k-elf,\$\(TARGET\)\)\nCONFIG_BINUTILS \+= --disable-plugins\nendif\n@CONFIG_BINUTILS += --enable-plugins # CODEX_AMIGA_LTO_PLUGINS\n@' "$makefile"
-  fi
-
-  grep -q 'CODEX_AMIGA_LTO_PLUGINS' "$makefile" \
-    || die "failed to enable binutils plugin support in ${makefile}"
+  [[ -f "$makefile" ]] || die "missing source Makefile: ${makefile}"
+  grep -qE '^CONFIG_BINUTILS \+= --enable-plugins' "$makefile" \
+    || die "binutils plugin support is not enabled in ${makefile}"
 }
 
 verify_default_libstubs_archive() {
@@ -760,7 +731,6 @@ build_gcc_version() {
   patch_libdebug_ordering "$src"
   patch_newlib_binutils_ordering "$src"
   reset_variant_build_dir "$src" "$prefix"
-  patch_filesysbox_statvfs_sources "$src" "$prefix"
   patch_gcc15_libnix_sources "$src"
   if [[ "$ENABLE_AMIGA_LTO" -eq 1 ]]; then
     enable_amiga_lto "$src"
@@ -817,12 +787,6 @@ build_vlink_and_vbcc() {
   local ndk="$3"
 
   log "Building vlink and vbcc for ${prefix}"
-  (
-    cd "$src"
-    if ! grep -q '_POSIX_C_SOURCE=200809L' projects/vbcc/Makefile 2>/dev/null; then
-      "$PATCH_BIN" -p1 < "${SCRIPT_DIR}/vbcc.diff"
-    fi
-  )
   make_amiga_parallel "$src" vlink vbcc NDK="$ndk" PREFIX="$prefix"
 }
 
@@ -902,7 +866,6 @@ main() {
   parse_args "$@"
 
   [[ "$(uname -s)" == "Linux" ]] || die "build_linux.sh is intended for Linux"
-  [[ -f "${SCRIPT_DIR}/vbcc.diff" ]] || die "missing ${SCRIPT_DIR}/vbcc.diff"
   detect_jobs
 
   log "Using ${JOBS} parallel jobs"
