@@ -757,6 +757,8 @@ build_gcc_version() {
   make_amiga "$src" branch branch="$branch" mod=gcc
   patch_zlib_download "$src"
   make_amiga "$src" update NDK="$ndk"
+  apply_patch_file "$src/projects/binutils" \
+    "${SCRIPT_DIR}/patches/binutils-amigaos-write-values.patch"
   apply_patch_file "$src" \
     "${SCRIPT_DIR}/patches/amiga-gcc-zlib-68060.patch"
   patch_libdebug_ordering "$src"

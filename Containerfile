@@ -61,6 +61,8 @@ RUN NDK=${NDK_VERSION:-3.2} && \
     mkdir -p /opt/amiga-${BUILD_GCC_VERSION} && \
     make branch branch=${BUILD_GCC_BRANCH} mod=gcc && \
     make update NDK=${NDK} && \
+    patch --forward --batch -d projects/binutils -p1 \
+      -i /root/patches/binutils-amigaos-write-values.patch && \
     patch --forward --batch -p1 -i /root/patches/amiga-gcc-zlib-68060.patch && \
     if [ "${BUILD_AMIGA_LTO}" = "1" ]; then \
       grep -qE '^CONFIG_BINUTILS \+= --enable-plugins' Makefile; \

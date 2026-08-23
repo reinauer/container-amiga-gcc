@@ -1,0 +1,16 @@
+diff --git a/bfd/amigaos.c b/bfd/amigaos.c
+index ce51bcd5..cf9ea421 100644
+--- a/bfd/amigaos.c
++++ b/bfd/amigaos.c
+@@ -2693 +2693 @@ amiga_write_section_contents (
+-		  if (!write_longs(&section->size, 1, abfd))
++		  if (!write_longs (&(unsigned long){ (unsigned long) section->size }, 1, abfd))
+@@ -2737 +2737 @@ amiga_write_section_contents (
+-		if (!write_longs (&r->address, 1, abfd))
++		if (!write_longs (&(unsigned long){ (unsigned long) r->address }, 1, abfd))
+@@ -2820 +2820 @@ amiga_write_section_contents (
+-		if (!write_longs (&r->address, 1, abfd))
++		if (!write_longs (&(unsigned long){ (unsigned long) r->address }, 1, abfd))
+@@ -2825 +2825 @@ amiga_write_section_contents (
+-		if (!write_words (&r->address, 1, abfd))
++		if (!write_words (&(unsigned long){ (unsigned long) r->address }, 1, abfd))
