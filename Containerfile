@@ -40,7 +40,6 @@ RUN apt-get -y autoremove && \
       "amitools[vamos] @ git+https://github.com/cnvogelg/amitools.git"
 
 COPY patches /root/patches
-COPY install_additional_sdks.sh /root/install_additional_sdks.sh
 COPY install_flexcat.sh /root/install_flexcat.sh
 
 # Install Bebbo's amiga-gcc
@@ -126,7 +125,6 @@ RUN NDK=${NDK_VERSION:-3.2} && \
     make -j $(nproc) sdk=render NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
     make -j $(nproc) sdk=warp3d NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
     make -j $(nproc) all-sdk NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
-    /root/install_additional_sdks.sh /opt/amiga-${BUILD_GCC_VERSION} && \
     /root/install_flexcat.sh /opt/amiga-${BUILD_GCC_VERSION}
 
 # Download and fix additional include files
