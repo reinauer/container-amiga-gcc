@@ -41,7 +41,6 @@ BREW_PACKAGES=(
   bash
   wget
   make
-  lhasa
   gmp
   mpfr
   libmpc
@@ -417,7 +416,6 @@ configure_macos_tools() {
 
   command -v git >/dev/null 2>&1 || die "git not found"
   command -v curl >/dev/null 2>&1 || die "curl not found"
-  command -v lha >/dev/null 2>&1 || die "lha not found; Homebrew lhasa should provide it"
   command -v python3 >/dev/null 2>&1 || die "python3 not found"
 
   export GIT_CONFIG_COUNT=1
@@ -761,7 +759,7 @@ build_gcc_version() {
   log "Building and installing GCC ${version} into ${prefix}"
   make_amiga "$src" branch branch="$branch" mod=gcc
   patch_zlib_download "$src"
-  make_amiga "$src" update NDK="$ndk"
+  make_amiga "$src" update NDK="$ndk" PREFIX="$prefix"
   apply_patch_file "$src/projects/binutils" \
     "${SCRIPT_DIR}/patches/binutils-amigaos-write-values.patch"
   patch_m68k_sibcall_prototype "$src"
@@ -839,7 +837,7 @@ install_working_vbcc() {
   curl -LfsS -o "$archive" http://phoenix.owl.de/vbcc/2022-05-22/vbcc_target_m68k-amigaos.lha
   (
     cd "$tmpdir"
-    lha -x "$(basename "$archive")"
+    "${prefix}/bin/lha" -x "$(basename "$archive")"
   )
 
   [[ -d "${extracted}/targets" ]] || die "VBCC target archive did not extract targets/"

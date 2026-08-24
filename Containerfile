@@ -22,17 +22,6 @@ RUN apt-get -y update && \
       libmpfr6 libmpfr-dev libmpc3 libmpc-dev libncurses-dev make patch perl rsync \
       texinfo zip
 
-# Build and install lha from source
-RUN cd /tmp && \
-    git clone --depth 1 https://github.com/jca02266/lha.git && \
-    cd lha && \
-    autoreconf -vfi && \
-    ./configure --prefix=/usr && \
-    make -j $(nproc) && \
-    make install && \
-    cd / && \
-    rm -rf /tmp/lha
-
 # Install amitools HEAD with the optional Vamos runtime dependencies.
 RUN apt-get -y autoremove && \
     rm -rf /usr/lib/python3.*/EXTERNALLY-MANAGED && \
@@ -59,7 +48,7 @@ RUN NDK=${NDK_VERSION:-3.2} && \
     fi && \
     mkdir -p /opt/amiga-${BUILD_GCC_VERSION} && \
     make branch branch=${BUILD_GCC_BRANCH} mod=gcc && \
-    make update NDK=${NDK} && \
+    make update NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
     patch --forward --batch -d projects/binutils -p1 \
       -i /root/patches/binutils-amigaos-write-values.patch && \
     if grep -Fq 'extern bool m68k_is_ok_for_sibcall(tree decl, tree exp);' \
@@ -134,7 +123,7 @@ RUN NDK=${NDK_VERSION:-3.2} && \
 RUN mkdir -p /tmp/vbcc-targets && \
     curl -o /tmp/vbcc-targets/vbcc_target_m68k-amigaos.lha http://phoenix.owl.de/vbcc/2022-05-22/vbcc_target_m68k-amigaos.lha && \
     cd /tmp/vbcc-targets && \
-    lha -x vbcc_target_m68k-amigaos.lha && \
+    /opt/amiga-${BUILD_GCC_VERSION}/bin/lha -x vbcc_target_m68k-amigaos.lha && \
     cd - && \
     mv /tmp/vbcc-targets/vbcc_target_m68k-amigaos/targets /opt/amiga-${BUILD_GCC_VERSION}/m68k-amigaos/vbcc/ && \
     rm -rf /tmp/vbcc-targets

@@ -53,7 +53,6 @@ APT_PACKAGES=(
   gcc
   gettext
   git
-  lhasa
   libgmp-dev
   libmpc-dev
   libmpfr-dev
@@ -333,10 +332,6 @@ ensure_apt() {
   local missing=()
   local package
   for package in "${APT_PACKAGES[@]}"; do
-    if [[ "$package" == "lhasa" ]] && command -v lha >/dev/null 2>&1; then
-      continue
-    fi
-
     if ! package_installed "$package"; then
       missing+=("$package")
     fi
@@ -387,7 +382,6 @@ configure_linux_tools() {
 
   command -v git >/dev/null 2>&1 || die "git not found"
   command -v curl >/dev/null 2>&1 || die "curl not found"
-  command -v lha >/dev/null 2>&1 || die "lha not found; install the lhasa package or rerun without --skip-apt"
   command -v makeinfo >/dev/null 2>&1 || die "makeinfo not found; install the texinfo package"
   command -v srec_cat >/dev/null 2>&1 || die "srec_cat not found; install the srecord package"
   command -v python3 >/dev/null 2>&1 || die "python3 not found"
@@ -730,7 +724,7 @@ build_gcc_version() {
   log "Building and installing GCC ${version} into ${prefix}"
   make_amiga "$src" branch branch="$branch" mod=gcc
   patch_zlib_download "$src"
-  make_amiga "$src" update NDK="$ndk"
+  make_amiga "$src" update NDK="$ndk" PREFIX="$prefix"
   apply_patch_file "$src/projects/binutils" \
     "${SCRIPT_DIR}/patches/binutils-amigaos-write-values.patch"
   patch_m68k_sibcall_prototype "$src"
@@ -808,7 +802,7 @@ install_working_vbcc() {
   curl -LfsS -o "$archive" http://phoenix.owl.de/vbcc/2022-05-22/vbcc_target_m68k-amigaos.lha
   (
     cd "$tmpdir"
-    lha -x "$(basename "$archive")"
+    "${prefix}/bin/lha" -x "$(basename "$archive")"
   )
 
   [[ -d "${extracted}/targets" ]] || die "VBCC target archive did not extract targets/"
