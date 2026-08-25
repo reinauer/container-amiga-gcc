@@ -668,6 +668,22 @@ apply_patch_file() {
   die "failed to apply patch: ${patch_file}"
 }
 
+patch_m68k_sibcall_prototype() {
+  local src="$1"
+  local header="${src}/projects/gcc/gcc/config/m68k/m68k.h"
+  local declaration='extern bool m68k_is_ok_for_sibcall(tree decl, tree exp);'
+
+  if grep -Fq "$declaration" "$header"; then
+    log "Moving the m68k sibcall prototype out of the libgcc target header"
+    apply_patch_file "$src/projects/gcc" \
+      "${SCRIPT_DIR}/patches/gcc-m68k-sibcall-prototype.patch"
+  fi
+
+  if grep -Fq "$declaration" "$header"; then
+    die "failed to move the m68k sibcall prototype out of ${header}"
+  fi
+}
+
 enable_amiga_lto() {
   local src="$1"
   local makefile="${src}/Makefile"
@@ -748,6 +764,7 @@ build_gcc_version() {
   make_amiga "$src" update NDK="$ndk"
   apply_patch_file "$src/projects/binutils" \
     "${SCRIPT_DIR}/patches/binutils-amigaos-write-values.patch"
+  patch_m68k_sibcall_prototype "$src"
   apply_patch_file "$src" \
     "${SCRIPT_DIR}/patches/amiga-gcc-zlib-68060.patch"
   patch_libdebug_ordering "$src"
