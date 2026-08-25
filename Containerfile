@@ -63,6 +63,11 @@ RUN NDK=${NDK_VERSION:-3.2} && \
     make update NDK=${NDK} && \
     patch --forward --batch -d projects/binutils -p1 \
       -i /root/patches/binutils-amigaos-write-values.patch && \
+    if grep -Fq 'extern bool m68k_is_ok_for_sibcall(tree decl, tree exp);' \
+        projects/gcc/gcc/config/m68k/m68k.h; then \
+      patch --forward --batch -d projects/gcc -p1 \
+        -i /root/patches/gcc-m68k-sibcall-prototype.patch; \
+    fi && \
     patch --forward --batch -p1 -i /root/patches/amiga-gcc-zlib-68060.patch && \
     if [ "${BUILD_AMIGA_LTO}" = "1" ]; then \
       grep -qE '^CONFIG_BINUTILS \+= --enable-plugins' Makefile; \
