@@ -8,6 +8,22 @@ A ready-to-use image built from this Containerfile is available on [Docker Hub](
 Docker Hub is the canonical image location.  The publish workflow mirrors the
 same version tags to this repository's GitHub Container Registry package.
 
+Native Linux and macOS toolchains are also produced by the **Build native
+toolchain archives** GitHub Actions workflow. It creates Linux x86_64 and macOS
+ARM64 `.tar.xz` archives for each supported GCC version. An archive contains
+both the dated installation and its stable version symlink, for example:
+
+```
+opt/amiga-16.2-20260825/
+opt/amiga-16.2 -> amiga-16.2-20260825
+```
+
+Install an archive at its intended absolute path with:
+
+```
+$ sudo tar -xJf amiga-gcc-16.2-20260825-linux-x86_64.tar.xz -C /
+```
+
 More information can be found [here](https://amiga.sebastian-bergmann.de/presentations/2017/evoke/amiga-software-development-in-2017).
 
 ## "Hello world!" Example
