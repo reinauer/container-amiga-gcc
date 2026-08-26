@@ -741,10 +741,20 @@ prepare_gencrc() {
     log "Reusing gencrc source tree ${src}"
   fi
 
+  # gencrc uses the non-standard uint typedef supplied by some Unix libc
+  # implementations. Use the equivalent standard C type so it also builds on
+  # macOS, where that typedef is not available.
+  if grep -qw 'uint' "${src}/gencrc.c"; then
+    perl -pi -e 's/\buint\b/unsigned int/g' "${src}/gencrc.c"
+  fi
+  if grep -qw 'uint' "${src}/gencrc.c"; then
+    die "failed to replace non-standard uint typedef in ${src}/gencrc.c"
+  fi
+
   log "Building gencrc"
   (
     cd "$src"
-    "$MAKE_BIN" -j "$JOBS" SHELL="$MAKE_SHELL"
+    "$MAKE_BIN" -j "$JOBS" CC="$HOST_CC" SHELL="$MAKE_SHELL"
   )
 
   GENCRC_BIN="${src}/gencrc"
