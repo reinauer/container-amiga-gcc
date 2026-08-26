@@ -113,23 +113,7 @@ RUN NDK=${NDK_VERSION:-3.2} && \
         | sha256sum --check --strict && \
       mv "${SDK_ARCHIVE_TMP}" "${SDK_ARCHIVE}" || exit 1; \
     done && \
-    make -j $(nproc) sdk=filesysbox NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
-    make -j $(nproc) sdk=sdi NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
-    make -j $(nproc) sdk=ahi NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
-    make -j $(nproc) sdk=mhi NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
-    make -j $(nproc) sdk=camd NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
-    make -j $(nproc) sdk=cgx NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
-    make -j $(nproc) sdk=guigfx NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
-    make -j $(nproc) sdk=mui NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
-    make -j $(nproc) sdk=p96 NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
-    make -j $(nproc) sdk=mcc_betterstring NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
-    make -j $(nproc) sdk=mcc_guigfx NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
-    make -j $(nproc) sdk=mcc_nlist NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
-    make -j $(nproc) sdk=mcc_texteditor NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
-    make -j $(nproc) sdk=mcc_thebar NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
-    make -j $(nproc) sdk=render NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
-    make -j $(nproc) sdk=warp3d NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
-    make -j $(nproc) all-sdk NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
+    make -j 4 all-sdk NDK=${NDK} PREFIX=/opt/amiga-${BUILD_GCC_VERSION} && \
     /root/install_flexcat.sh /opt/amiga-${BUILD_GCC_VERSION}
 
 # Download and fix additional include files
