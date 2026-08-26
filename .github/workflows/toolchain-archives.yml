@@ -1,0 +1,113 @@
+name: Build native toolchain archives
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_date:
+        description: Build date used in install paths (YYYYMMDD; defaults to today)
+        required: false
+        type: string
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    outputs:
+      build_date: ${{ steps.build-date.outputs.value }}
+
+    steps:
+      - name: Resolve build date
+        id: build-date
+        env:
+          REQUESTED_BUILD_DATE: ${{ inputs.build_date }}
+        run: |
+          build_date="${REQUESTED_BUILD_DATE:-$(date -u +%Y%m%d)}"
+          if [[ ! "$build_date" =~ ^[0-9]{8}$ ]]; then
+            echo "Invalid build date: $build_date (expected YYYYMMDD)" >&2
+            exit 1
+          fi
+          echo "value=$build_date" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: metadata
+    name: ${{ matrix.archive_os }} GCC ${{ matrix.version }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - linux
+          - macos
+        version:
+          - 6.5.0b
+          - "13.4"
+          - "16.2"
+        include:
+          - os: linux
+            runner: ubuntu-24.04
+            archive_os: linux-x86_64
+          - os: macos
+            runner: macos-15
+            archive_os: macos-arm64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Build toolchain
+        env:
+          BUILD_DATE: ${{ needs.metadata.outputs.build_date }}
+          GCC_VERSION: ${{ matrix.version }}
+        run: |
+          ./build.sh \
+            --version "$GCC_VERSION" \
+            --date "$BUILD_DATE" \
+            --prefix-template 'amiga-{version}-{date}' \
+            --workdir "$RUNNER_TEMP/amiga-gcc-$GCC_VERSION"
+
+      - name: Create toolchain archive
+        id: archive
+        env:
+          ARCHIVE_OS: ${{ matrix.archive_os }}
+          BUILD_DATE: ${{ needs.metadata.outputs.build_date }}
+          GCC_VERSION: ${{ matrix.version }}
+        run: |
+          prefix_name="amiga-$GCC_VERSION-$BUILD_DATE"
+          link_name="amiga-$GCC_VERSION"
+          archive="$RUNNER_TEMP/amiga-gcc-$GCC_VERSION-$BUILD_DATE-$ARCHIVE_OS.tar.xz"
+
+          # GCC build trees can consume most of a hosted runner's disk. They
+          # are not part of the installed toolchain, so reclaim that space
+          # before creating and verifying a second, extracted archive copy.
+          rm -rf -- "$RUNNER_TEMP/amiga-gcc-$GCC_VERSION"
+
+          sudo ln -sfn "$prefix_name" "/opt/$link_name"
+          sudo chown -R 0:0 "/opt/$prefix_name"
+          sudo chown -h 0:0 "/opt/$link_name"
+
+          COPYFILE_DISABLE=1 tar -C / -cJf "$archive" \
+            "opt/$prefix_name" \
+            "opt/$link_name"
+
+          verify_dir="$RUNNER_TEMP/archive-check-$GCC_VERSION"
+          mkdir -p "$verify_dir"
+          tar -C "$verify_dir" -xJf "$archive"
+          test -x "$verify_dir/opt/$prefix_name/bin/m68k-amigaos-gcc"
+          test -L "$verify_dir/opt/$link_name"
+          test "$(readlink "$verify_dir/opt/$link_name")" = "$prefix_name"
+
+          echo "path=$archive" >> "$GITHUB_OUTPUT"
+
+      - name: Upload toolchain archive
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ steps.archive.outputs.path }}
+          archive: false
+          if-no-files-found: error
