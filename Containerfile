@@ -14,8 +14,7 @@ ARG BUILD_AMIGA_LTO=1
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-COPY build.sh install_flexcat.sh aos68k aos68km aos68kr /root/container-amiga-gcc/
-COPY patches /root/container-amiga-gcc/patches
+COPY build.sh install_flexcat.sh /root/container-amiga-gcc/
 
 # Build the requested toolchain through the same native entry point used on
 # Linux and macOS. Runtime tools such as Vamos and gencrc are installed into

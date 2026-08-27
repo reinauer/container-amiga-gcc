@@ -883,22 +883,6 @@ apply_patch_file() {
   die "failed to apply patch: ${patch_file}"
 }
 
-patch_m68k_sibcall_prototype() {
-  local src="$1"
-  local header="${src}/projects/gcc/gcc/config/m68k/m68k.h"
-  local declaration='extern bool m68k_is_ok_for_sibcall(tree decl, tree exp);'
-
-  if grep -Fq "$declaration" "$header"; then
-    log "Moving the m68k sibcall prototype out of the libgcc target header"
-    apply_patch_file "$src/projects/gcc" \
-      "${SCRIPT_DIR}/patches/gcc-m68k-sibcall-prototype.patch"
-  fi
-
-  if grep -Fq "$declaration" "$header"; then
-    die "failed to move the m68k sibcall prototype out of ${header}"
-  fi
-}
-
 configure_amiga_lto() {
   local src="$1"
   local makefile="${src}/Makefile"
@@ -991,9 +975,6 @@ build_gcc_version() {
   log "Building and installing GCC ${version} into ${prefix}"
   make_amiga "$src" branch branch="$branch" mod=gcc
   make_amiga "$src" update NDK="$ndk" PREFIX="$prefix"
-  patch_m68k_sibcall_prototype "$src"
-  apply_patch_file "$src" \
-    "${SCRIPT_DIR}/patches/amiga-gcc-zlib-68060.patch"
   patch_libdebug_ordering "$src"
   patch_newlib_binutils_ordering "$src"
   reset_variant_build_dir "$src" "$prefix"
@@ -1012,7 +993,6 @@ build_gcc_version() {
   download_and_fix_includes "$src" "$prefix"
   build_vlink_and_vbcc "$src" "$prefix" "$ndk"
   install_working_vbcc "$prefix"
-  install_vbcc_configs "$prefix"
   install_gencrc "$prefix"
   verify_prefix "$prefix"
 }
@@ -1068,25 +1048,6 @@ install_working_vbcc() {
   rm -rf "${prefix}/m68k-amigaos/vbcc/targets"
   mv "${extracted}/targets" "${prefix}/m68k-amigaos/vbcc/"
   rm -rf "$tmpdir"
-}
-
-install_vbcc_configs() {
-  local prefix="$1"
-  local config
-
-  log "Installing VBCC config files with versioned paths into ${prefix}/bin"
-  mkdir -p "${prefix}/bin"
-  for config in aos68k aos68km aos68kr; do
-    cp "${SCRIPT_DIR}/${config}" "${prefix}/bin/${config}"
-  done
-
-  PREFIX_REPLACEMENT="${prefix}/" perl -pi -e 's|/opt/amiga/|$ENV{PREFIX_REPLACEMENT}|g' \
-    "${prefix}/bin/aos68k" \
-    "${prefix}/bin/aos68km" \
-    "${prefix}/bin/aos68kr"
-
-  VBCC_INCLUDE="${prefix}/m68k-amigaos/vbcc/include" perl -pi -e 's|-Ivincludeos3:|-I$ENV{VBCC_INCLUDE}|g' \
-    "${prefix}/bin/aos68k"
 }
 
 verify_prefix() {
