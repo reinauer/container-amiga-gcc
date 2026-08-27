@@ -850,25 +850,6 @@ patch_newlib_binutils_ordering() {
     || die "failed to make newlib wait for binutils gdb in ${makefile}"
 }
 
-patch_zlib_download() {
-  local src="$1"
-  local makefile="${src}/Makefile"
-
-  [[ -f "$makefile" ]] || die "missing source Makefile: ${makefile}"
-
-  if grep -Fq 'https://zlib.net/$(ZLIB).tar.xz' "$makefile"; then
-    log "Patching obsolete zlib download URL"
-    perl -pi -e '
-      s!\$\(ZLIB\)\.tar\.xz!\$\(ZLIB\).tar.gz!g;
-      s!https://zlib\.net/\$\(ZLIB\)\.tar\.gz!https://zlib.net/fossils/\$\(ZLIB\).tar.gz!g;
-    ' "$makefile"
-  fi
-
-  if grep -Fq 'https://zlib.net/$(ZLIB).tar.xz' "$makefile"; then
-    die "failed to replace obsolete zlib download URL in ${makefile}"
-  fi
-}
-
 apply_patch_file() {
   local dir="$1"
   local patch_file="$2"
@@ -987,7 +968,7 @@ make_amiga_parallel() {
 
 build_gcc_version() {
   local spec="$1"
-  local version branch prefix src ndk zlib_build zlib_prefix
+  local version branch prefix src ndk
 
   version="$(version_from_spec "$spec")"
   branch="$(branch_from_spec "$spec")"
@@ -1001,8 +982,6 @@ build_gcc_version() {
     prefix="$(prefix_for_version "$version")"
   fi
   src="${WORKDIR}/amiga-gcc-${version}"
-  zlib_build="${src}/build-$(uname -s)-m68k-amigaos-zlib"
-  zlib_prefix="${prefix}/m68k-amigaos"
 
   log "Building GCC ${version} (${branch}) with NDK ${ndk}"
   ensure_prefix_writable "$prefix"
@@ -1011,7 +990,6 @@ build_gcc_version() {
 
   log "Building and installing GCC ${version} into ${prefix}"
   make_amiga "$src" branch branch="$branch" mod=gcc
-  patch_zlib_download "$src"
   make_amiga "$src" update NDK="$ndk" PREFIX="$prefix"
   patch_m68k_sibcall_prototype "$src"
   apply_patch_file "$src" \
@@ -1022,19 +1000,9 @@ build_gcc_version() {
   configure_amiga_lto "$src"
   make_amiga_parallel "$src" all NDK="$ndk" PREFIX="$prefix"
 
-  # Upstream changed zlib from accepting the target prefix to appending
-  # $(TARGET) itself. Support both layouts so dated and current source trees
-  # install into the same final m68k-amigaos directories.
-  if grep -Fq '$(PREFIX)/$(TARGET)/lib/libz.a' "${src}/Makefile"; then
-    zlib_prefix="$prefix"
-  fi
-  log "Installing target zlib for GCC ${version}"
-  make_amiga_parallel "$src" zlib NDK="$ndk" \
-    BUILD="$zlib_build" \
-    PREFIX="$zlib_prefix" \
-    PATH="${prefix}/bin:${PATH}" \
-    AR="${prefix}/bin/m68k-amigaos-ar" ARFLAGS=rcs \
-    RANLIB="${prefix}/bin/m68k-amigaos-ranlib"
+  # target libraries, one copy per multilib
+  log "Installing zlib, libpng and freetype for GCC ${version}"
+  make_amiga_parallel "$src" zlib libpng libfreetype2 NDK="$ndk" PREFIX="$prefix"
   verify_default_libstubs_archive "$prefix"
 
   log "Installing SDKs for GCC ${version}"
@@ -1133,6 +1101,7 @@ verify_prefix() {
 
   [[ -d "${prefix}/m68k-amigaos/vbcc/targets" ]] || die "missing VBCC targets in ${prefix}"
   [[ -f "${prefix}/bin/aos68k" ]] || die "missing VBCC config aos68k in ${prefix}"
+  [[ -f "${prefix}/m68k-amigaos/include/png.h" ]] || die "missing png.h in ${prefix}"
   [[ -x "${prefix}/bin/gencrc" ]] || die "missing gencrc in ${prefix}"
   if [[ "$INSTALL_AMITOOLS" -eq 1 ]]; then
     [[ -x "${prefix}/bin/vamos" ]] || die "missing Vamos in ${prefix}"
