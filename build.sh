@@ -1013,8 +1013,6 @@ build_gcc_version() {
   make_amiga "$src" branch branch="$branch" mod=gcc
   patch_zlib_download "$src"
   make_amiga "$src" update NDK="$ndk" PREFIX="$prefix"
-  apply_patch_file "$src/projects/binutils" \
-    "${SCRIPT_DIR}/patches/binutils-amigaos-write-values.patch"
   patch_m68k_sibcall_prototype "$src"
   apply_patch_file "$src" \
     "${SCRIPT_DIR}/patches/amiga-gcc-zlib-68060.patch"
