@@ -2,10 +2,8 @@
 set -euo pipefail
 
 # The adtools upstream is unmaintained and its last tag (2.18) predates
-# the Linux/host build fixes in the AmigaPorts fork. The pinned commit
-# is AmigaPorts master plus the host build fixes proposed as
-# AmigaPorts/flexcat#4; repoint to AmigaPorts once that PR merges.
-FLEXCAT_REPO="https://github.com/codewiz/flexcat.git"
+# the Linux/host build fixes in the maintained AmigaPorts fork.
+FLEXCAT_REPO="https://github.com/AmigaPorts/flexcat.git"
 FLEXCAT_COMMIT="91783ef24c45af01bbc0efd9409e71a655e3585b"
 
 usage() {
