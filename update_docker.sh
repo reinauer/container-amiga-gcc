@@ -61,13 +61,12 @@ if [ -z "$IMAGE_REPOSITORY" ]; then
     exit 1
 fi
 
-# Define GCC versions, branches, and whether to enable Amiga LTO.  Keep this
-# compatible with macOS /bin/bash 3.2, which does not support associative
-# arrays.
+# Define GCC versions and branches. Keep this compatible with macOS
+# /bin/bash 3.2, which does not support associative arrays.
 GCC_VERSION_SPECS=(
-    "6.5.0b:amiga6:1"
-    "13.4:amiga13.4:1"
-    "16.2:amiga16.2:1"
+    "6.5.0b:amiga6"
+    "13.4:amiga13.4"
+    "16.2:amiga16.2"
 )
 
 LATEST_GCC_VERSION="6.5.0b"
@@ -116,12 +115,10 @@ fi
 # --- Build and push each GCC version ---
 for GCC_VERSION_SPEC in "${GCC_VERSION_SPECS[@]}"; do
     GCC_VERSION="${GCC_VERSION_SPEC%%:*}"
-    GCC_REST="${GCC_VERSION_SPEC#*:}"
-    GCC_BRANCH="${GCC_REST%%:*}"
-    BUILD_AMIGA_LTO="${GCC_REST#*:}"
+    GCC_BRANCH="${GCC_VERSION_SPEC#*:}"
 
     echo "========================================"
-    echo "Building GCC ${GCC_VERSION} (branch: ${GCC_BRANCH}, LTO: ${BUILD_AMIGA_LTO})"
+    echo "Building GCC ${GCC_VERSION} (branch: ${GCC_BRANCH})"
     echo "========================================"
     echo
 
@@ -136,7 +133,6 @@ for GCC_VERSION_SPEC in "${GCC_VERSION_SPECS[@]}"; do
         --no-cache \
         --build-arg "BUILD_GCC_BRANCH=${GCC_BRANCH}" \
         --build-arg "BUILD_GCC_VERSION=${GCC_VERSION}" \
-        --build-arg "BUILD_AMIGA_LTO=${BUILD_AMIGA_LTO}" \
         -t "$LOCAL_TAG" .
     ask_and_run "$DOCKER_CLI" tag "$LOCAL_TAG" "$TAG_GCC_VERSION"
     ask_and_run "$DOCKER_CLI" tag "$LOCAL_TAG" "$TAG_GCC_VERSION_DATE"
