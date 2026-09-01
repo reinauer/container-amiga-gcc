@@ -30,7 +30,6 @@ INSTALL_AMITOOLS=1
 REUSE_SOURCE=0
 DEFAULT_SYMLINK_VERSION=""
 PREFIX_OVERRIDE=""
-ENABLE_AMIGA_LTO=1
 HOST_CC="${CC:-}"
 HOST_CXX="${CXX:-}"
 GENCRC_BIN=""
@@ -110,7 +109,6 @@ Defaults:
   versions:       6.5.0b, 13.4, 16.2
   prefixes:       /opt/amiga-vVERSION-YYYYMMDD
   NDK:            3.2
-  Amiga LTO:      enabled
   source workdir: ${workdir_default}
 
 Options:
@@ -131,14 +129,11 @@ Options:
   --repo URL                 Main amiga-gcc repository URL
   --cc PATH_OR_NAME          Host C compiler (default: prefer gcc-15/gcc)
   --cxx PATH_OR_NAME         Host C++ compiler (default: prefer g++-15/g++)
-  --enable-amiga-lto         Enable Amiga HUNK LTO support (default)
-  --disable-amiga-lto        Disable Amiga HUNK LTO support
-                             LTO is supported for GCC 6.5.0b, 13.4, and 16.2.
 ${package_option}
   --skip-amitools            Do not install amitools/Vamos into each prefix
   --reuse-source             Reuse existing per-version source trees
                              Generated build directories are reused only when
-                             they match the requested prefix and LTO mode
+                             they match the requested prefix
   --link-default VERSION     Create/update /opt/amiga -> the matching versioned prefix
   -h, --help                 Show this help
 
@@ -147,10 +142,9 @@ Examples:
   ./build.sh --date 20260518
   ./build.sh --ndk 3.9 --version 13.4
   ./build.sh --version 13.4 --prefix /opt/amiga-13.4-lto
-  ./build.sh --version 6.5.0b --disable-amiga-lto
   ./build.sh --cc gcc-12 --cxx g++-12
   ./build.sh --version 16.2 --prefix /opt/amiga-16.2
-  ./build.sh --version 15.2:amiga15.2 --disable-amiga-lto --link-default 15.2
+  ./build.sh --version 15.2:amiga15.2 --link-default 15.2
 EOF
 }
 
@@ -256,14 +250,6 @@ parse_args() {
         HOST_CXX="$2"
         shift 2
         ;;
-      --enable-amiga-lto)
-        ENABLE_AMIGA_LTO=1
-        shift
-        ;;
-      --disable-amiga-lto)
-        ENABLE_AMIGA_LTO=0
-        shift
-        ;;
       --skip-apt)
         [[ "$BUILD_HOST" == "linux" ]] || die "unknown option: $1"
         INSTALL_PACKAGES=0
@@ -304,17 +290,6 @@ parse_args() {
   if [[ -n "$PREFIX_OVERRIDE" && ${#VERSION_SPECS[@]} -ne 1 ]]; then
     die "--prefix requires exactly one --version"
   fi
-
-  if [[ "$ENABLE_AMIGA_LTO" -eq 1 ]]; then
-    local lto_spec
-    for lto_spec in "${VERSION_SPECS[@]}"; do
-      case "${lto_spec%%:*}" in
-        6.5.0b|13.4|16.2) ;;
-        *) die "Amiga LTO currently supports --version 6.5.0b, 13.4, or 16.2" ;;
-      esac
-    done
-  fi
-
 }
 
 prefix_for_version() {
@@ -794,7 +769,7 @@ reset_variant_build_dir() {
 
   [[ "$REUSE_SOURCE" -eq 1 ]] || return 0
 
-  stamp_text="$(printf 'prefix=%s\nlto=%s' "$prefix" "$ENABLE_AMIGA_LTO")"
+  stamp_text="$(printf 'prefix=%s' "$prefix")"
   if [[ -f "$stamp" && "$(cat "$stamp")" == "$stamp_text" ]]; then
     return
   fi
@@ -807,7 +782,7 @@ reset_variant_build_dir() {
   fi
 
   mkdir -p "$build"
-  printf 'prefix=%s\nlto=%s\n' "$prefix" "$ENABLE_AMIGA_LTO" > "$stamp"
+  printf 'prefix=%s\n' "$prefix" > "$stamp"
 }
 
 patch_libdebug_ordering() {
@@ -883,29 +858,16 @@ apply_patch_file() {
   die "failed to apply patch: ${patch_file}"
 }
 
-configure_amiga_lto() {
+verify_amiga_lto() {
   local src="$1"
   local makefile="${src}/Makefile"
-  local enabled_line='CONFIG_BINUTILS += --enable-plugins'
-  local disabled_line='# CODEX_AMIGA_LTO_DISABLED: CONFIG_BINUTILS += --enable-plugins'
 
   [[ -f "$makefile" ]] || die "missing source Makefile: ${makefile}"
 
-  if [[ "$ENABLE_AMIGA_LTO" -eq 1 ]]; then
-    log "Enabling Amiga HUNK LTO support"
-    DISABLED_LINE="$disabled_line" ENABLED_LINE="$enabled_line" \
-      perl -pi -e 's/^\Q$ENV{DISABLED_LINE}\E$/$ENV{ENABLED_LINE}/' "$makefile"
-    grep -qE '^CONFIG_BINUTILS \+= --enable-plugins' "$makefile" \
-      || die "binutils plugin support is not enabled in ${makefile}"
-    return
-  fi
-
-  log "Disabling Amiga HUNK LTO support"
-  DISABLED_LINE="$disabled_line" \
-    perl -pi -e 's/^CONFIG_BINUTILS \+= --enable-plugins.*$/$ENV{DISABLED_LINE}/' "$makefile"
-  if grep -qE '^CONFIG_BINUTILS \+= --enable-plugins' "$makefile"; then
-    die "failed to disable binutils plugin support in ${makefile}"
-  fi
+  # The upstream Makefile enables binutils plugins (Amiga HUNK LTO) on the
+  # cross toolchain and disables them only for the AmigaOS-hosted one.
+  grep -qE '^CONFIG_BINUTILS \+=.*--enable-plugins' "$makefile" \
+    || die "binutils plugin support is not enabled in ${makefile}"
 }
 
 verify_default_libstubs_archive() {
@@ -978,7 +940,7 @@ build_gcc_version() {
   patch_libdebug_ordering "$src"
   patch_newlib_binutils_ordering "$src"
   reset_variant_build_dir "$src" "$prefix"
-  configure_amiga_lto "$src"
+  verify_amiga_lto "$src"
   make_amiga_parallel "$src" all NDK="$ndk" PREFIX="$prefix"
 
   # target libraries, one copy per multilib
