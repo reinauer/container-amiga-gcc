@@ -704,6 +704,37 @@ safe_remove_source() {
   fi
 }
 
+warn_if_reused_checkout_stale() {
+  local src="$1"
+  local label="$2"
+  local upstream_ref local_revision upstream_revision
+
+  (
+    cd "$src"
+
+    if ! git fetch --quiet --depth 1 origin; then
+      printf 'warning: could not check whether the reused %s checkout is current: %s\n' \
+        "$label" "$src" >&2
+      return
+    fi
+
+    upstream_ref="$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
+    if [[ -z "$upstream_ref" ]]; then
+      printf 'warning: reused %s checkout has no tracked upstream revision: %s\n' \
+        "$label" "$src" >&2
+      return
+    fi
+
+    local_revision="$(git rev-parse HEAD)"
+    upstream_revision="$(git rev-parse "$upstream_ref")"
+    if [[ "$local_revision" != "$upstream_revision" ]]; then
+      printf 'warning: reused %s checkout is not current (%s != %s): %s\n' \
+        "$label" "${local_revision:0:12}" "${upstream_revision:0:12}" "$src" >&2
+      printf 'warning: rerun without --reuse-source to build from a fresh checkout\n' >&2
+    fi
+  )
+}
+
 prepare_source() {
   local version="$1"
   local src="$2"
@@ -718,6 +749,7 @@ prepare_source() {
     git clone --depth 1 "$REPO_URL" "$src"
   else
     log "Reusing source tree ${src}"
+    warn_if_reused_checkout_stale "$src" "amiga-gcc"
   fi
 
   (
@@ -739,6 +771,7 @@ prepare_gencrc() {
     git clone --depth 1 "$GENCRC_REPO_URL" "$src"
   else
     log "Reusing gencrc source tree ${src}"
+    warn_if_reused_checkout_stale "$src" "gencrc"
   fi
 
   # gencrc uses the non-standard uint typedef supplied by some Unix libc
@@ -886,26 +919,42 @@ apply_patch_file() {
 configure_amiga_lto() {
   local src="$1"
   local makefile="${src}/Makefile"
-  local enabled_line='CONFIG_BINUTILS += --enable-plugins'
-  local disabled_line='# CODEX_AMIGA_LTO_DISABLED: CONFIG_BINUTILS += --enable-plugins'
+  local enabled_pattern='^[[:space:]]*CONFIG_BINUTILS[[:space:]]*[+?:]?=[^#]*--enable-plugins([[:space:]]|$)'
+  local disabled_pattern='^[[:space:]]*CONFIG_BINUTILS[[:space:]]*[+?:]?=[^#]*--disable-plugins[^#]*# CODEX_AMIGA_LTO_DISABLED'
 
   [[ -f "$makefile" ]] || die "missing source Makefile: ${makefile}"
 
   if [[ "$ENABLE_AMIGA_LTO" -eq 1 ]]; then
     log "Enabling Amiga HUNK LTO support"
-    DISABLED_LINE="$disabled_line" ENABLED_LINE="$enabled_line" \
-      perl -pi -e 's/^\Q$ENV{DISABLED_LINE}\E$/$ENV{ENABLED_LINE}/' "$makefile"
-    grep -qE '^CONFIG_BINUTILS \+= --enable-plugins' "$makefile" \
+    perl -pi -e '
+      s/^# CODEX_AMIGA_LTO_DISABLED: //;
+      if (/#[ \t]*CODEX_AMIGA_LTO_DISABLED[ \t]*(?:\r?\n)?$/) {
+        s/--disable-plugins/--enable-plugins/;
+        s/[ \t]+#[ \t]*CODEX_AMIGA_LTO_DISABLED[ \t]*(?=\r?$)//;
+      }
+    ' "$makefile"
+    grep -qE "$enabled_pattern" "$makefile" \
       || die "binutils plugin support is not enabled in ${makefile}"
     return
   fi
 
   log "Disabling Amiga HUNK LTO support"
-  DISABLED_LINE="$disabled_line" \
-    perl -pi -e 's/^CONFIG_BINUTILS \+= --enable-plugins.*$/$ENV{DISABLED_LINE}/' "$makefile"
-  if grep -qE '^CONFIG_BINUTILS \+= --enable-plugins' "$makefile"; then
+  perl -pi -e '
+    s/^# CODEX_AMIGA_LTO_DISABLED: //;
+    if (/^[ \t]*CONFIG_BINUTILS[ \t]*[+?:]?=[^#]*--enable-plugins(?:[ \t]|$)/) {
+      s/--enable-plugins/--disable-plugins/;
+      if (!/#[ \t]*CODEX_AMIGA_LTO_DISABLED[ \t]*(?:\r?\n)?$/) {
+        if (!s{\r?\n$}{ # CODEX_AMIGA_LTO_DISABLED\n}) {
+          $_ .= " # CODEX_AMIGA_LTO_DISABLED";
+        }
+      }
+    }
+  ' "$makefile"
+  if grep -qE "$enabled_pattern" "$makefile"; then
     die "failed to disable binutils plugin support in ${makefile}"
   fi
+  grep -qE "$disabled_pattern" "$makefile" \
+    || die "binutils plugin support was not explicitly disabled in ${makefile}"
 }
 
 verify_default_libstubs_archive() {
