@@ -132,6 +132,8 @@ for GCC_VERSION_SPEC in "${GCC_VERSION_SPECS[@]}"; do
 
     # Execute commands for this version
     ask_and_run "$DOCKER_CLI" build \
+        --pull \
+        --no-cache \
         --build-arg "BUILD_GCC_BRANCH=${GCC_BRANCH}" \
         --build-arg "BUILD_GCC_VERSION=${GCC_VERSION}" \
         --build-arg "BUILD_AMIGA_LTO=${BUILD_AMIGA_LTO}" \
