@@ -979,7 +979,11 @@ build_gcc_version() {
 
   # target libraries, one copy per multilib
   log "Installing zlib, libpng and freetype for GCC ${version}"
-  make_amiga_parallel "$src" zlib libpng libfreetype2 NDK="$ndk" PREFIX="$prefix"
+  # A host ranlib can leave a zero-member archive while returning success.
+  # Recreate zlib so a failed build cannot be reused as up to date.
+  make_amiga "$src" clean-zlib
+  make_amiga_parallel "$src" zlib libpng libfreetype2 \
+    NDK="$ndk" PREFIX="$prefix" RANLIB=m68k-amigaos-ranlib
   verify_default_libstubs_archive "$prefix"
 
   log "Installing SDKs for GCC ${version}"
