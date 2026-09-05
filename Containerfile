@@ -23,10 +23,8 @@ RUN /root/container-amiga-gcc/build.sh \
       --ndk "${NDK_VERSION:-3.2}" \
       --prefix-template 'amiga-{version}' \
       --workdir /root/.amiga-gcc-build \
-      --link-default "${BUILD_GCC_VERSION}"
-
-# Clean up
-RUN cd / && \
+      --link-default "${BUILD_GCC_VERSION}" && \
+    cd / && \
     rm -rf /root/.amiga-gcc-build /root/container-amiga-gcc && \
     rm -rf /var/lib/apt/lists/* && \
     apt-get purge -y \
