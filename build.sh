@@ -731,6 +731,14 @@ prepare_source() {
   (
     cd "$src"
     perl -pi -e "s#\\S+/gcc#${GCC_REPO_URL}#g" default-repos
+
+    # Savannah's direct download server intermittently fails TLS connections
+    # on hosted runners. Use FreeType's official SourceForge mirror, retaining
+    # the version selected by upstream and its download retry handling.
+    perl -pi -e '
+      s{https://download-mirror\.savannah\.gnu\.org/releases/freetype/}
+       {https://downloads.sourceforge.net/project/freetype/freetype2/\$(patsubst freetype-%,%,\$(LIBFREETYPE))/}g;
+    ' Makefile
   )
 }
 
