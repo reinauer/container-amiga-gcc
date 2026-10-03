@@ -26,6 +26,20 @@ $ sudo tar -xJf amiga-gcc-16.2-20260825-linux-x86_64.tar.xz -C /
 
 More information can be found [here](https://amiga.sebastian-bergmann.de/presentations/2017/evoke/amiga-software-development-in-2017).
 
+## VBCC
+
+Both container and native builds install `bin/vc` as a wrapper. It sets
+`VBCC` to the installation's `m68k-amigaos/vbcc` directory and puts its
+`bin` directory first in `PATH` before running `libexec/vbcc/vc`. No manual
+`VBCC` setting is needed; the wrapper selects its own installation even if
+the caller has set `VBCC` for another toolchain.
+
+Configs live in `m68k-amigaos/vbcc/config`, using VBCC's standard config
+lookup. Use `vc hello.c -o hello` for the default config or
+`vc +aos68k hello.c -o hello` to select a target. The `aos68km`, `aos68kr`,
+`kick13`, and `kick13.config` names are also available. Explicit config
+paths and the usual current-directory overrides continue to work.
+
 ## "Hello world!" Example
 
 ### AmigaOS C API

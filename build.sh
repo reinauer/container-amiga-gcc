@@ -1001,6 +1001,7 @@ build_gcc_version() {
   download_and_fix_includes "$src" "$prefix"
   build_vlink_and_vbcc "$src" "$prefix" "$ndk"
   install_working_vbcc "$prefix"
+  install_vbcc_wrapper "$prefix"
   install_gencrc "$prefix"
   verify_prefix "$prefix"
 }
@@ -1058,6 +1059,66 @@ install_working_vbcc() {
   rm -rf "$tmpdir"
 }
 
+install_vbcc_wrapper() {
+  local prefix="$1"
+  local config_dir="${prefix}/m68k-amigaos/vbcc/config"
+  local driver="${prefix}/libexec/vbcc/vc"
+  local config
+
+  log "Installing VBCC wrapper into ${prefix}"
+  mkdir -p "$config_dir" "${prefix}/libexec/vbcc"
+  for config in vc.config aos68k aos68km aos68kr kick13.config; do
+    if [[ -f "${prefix}/bin/${config}" ]]; then
+      mv -f "${prefix}/bin/${config}" "${config_dir}/${config}"
+    fi
+    [[ -f "${config_dir}/${config}" ]] || die "missing VBCC config ${config} in ${prefix}"
+  done
+  # The standard lookup uses exact filenames; retain the +kick13 shorthand.
+  ln -sfn kick13.config "${config_dir}/kick13"
+
+  # Upstream make may skip installation on a reused build, or replace our
+  # wrapper with a newly built driver. Only relocate the latter.
+  if [[ -f "${prefix}/bin/vc" ]] &&
+      ! grep -Fqx '# container-amiga-gcc vc wrapper' "${prefix}/bin/vc"; then
+    mv -f "${prefix}/bin/vc" "$driver"
+  fi
+  [[ -x "$driver" ]] || die "missing VBCC driver in ${prefix}"
+
+  cat > "${prefix}/bin/vc" <<'EOF'
+#!/bin/sh
+# container-amiga-gcc vc wrapper
+prefix=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P) || exit 1
+export VBCC="$prefix/m68k-amigaos/vbcc"
+export PATH="$prefix/bin:$PATH"
+exec "$prefix/libexec/vbcc/vc" "$@"
+EOF
+  chmod 755 "${prefix}/bin/vc"
+}
+
+verify_vbcc() (
+  local prefix="$1"
+  local config tmpdir
+
+  [[ -x "${prefix}/bin/vc" ]] || die "missing VBCC wrapper in ${prefix}"
+  [[ -x "${prefix}/libexec/vbcc/vc" ]] || die "missing VBCC driver in ${prefix}"
+  for config in vc.config aos68k aos68km aos68kr kick13.config kick13; do
+    [[ -f "${prefix}/m68k-amigaos/vbcc/config/${config}" ]] ||
+      die "missing VBCC config ${config} in ${prefix}"
+  done
+
+  log "Verifying VBCC default and aos68k compilation and linking"
+  tmpdir=$(mktemp -d)
+  trap 'rm -rf "$tmpdir"' EXIT
+  cd "$tmpdir"
+  printf 'int main(void) { return 0; }\n' > hello.c
+  unset VBCC
+  "${prefix}/bin/vc" -c hello.c -o default.o
+  "${prefix}/bin/vc" default.o -o default
+  "${prefix}/bin/vc" +aos68k -c hello.c -o aos68k.o
+  "${prefix}/bin/vc" +aos68k aos68k.o -o aos68k
+  [[ -s default && -s aos68k ]] || die "VBCC did not produce executables"
+)
+
 verify_prefix() {
   local prefix="$1"
 
@@ -1069,7 +1130,7 @@ verify_prefix() {
   fi
 
   [[ -d "${prefix}/m68k-amigaos/vbcc/targets" ]] || die "missing VBCC targets in ${prefix}"
-  [[ -f "${prefix}/bin/aos68k" ]] || die "missing VBCC config aos68k in ${prefix}"
+  verify_vbcc "$prefix"
   [[ -f "${prefix}/m68k-amigaos/include/png.h" ]] || die "missing png.h in ${prefix}"
   [[ -x "${prefix}/bin/gencrc" ]] || die "missing gencrc in ${prefix}"
   if [[ "$INSTALL_AMITOOLS" -eq 1 ]]; then
