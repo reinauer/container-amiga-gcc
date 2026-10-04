@@ -24,6 +24,19 @@ Install an archive at its intended absolute path with:
 $ sudo tar -xJf amiga-gcc-16.2-20260825-linux-x86_64.tar.xz -C /
 ```
 
+On macOS, browser downloads may carry a quarantine flag that causes an
+"Apple could not verify" warning for each executable. If you trust the
+downloaded toolchains, remove that flag recursively after extraction:
+
+```sh
+sudo /usr/bin/xattr -rd com.apple.quarantine /opt/amiga-*-20261002/
+```
+
+Replace `20261002` with your installation date. This covers all toolchain
+versions with that date, including internal compiler helpers, so individual
+executables do not need approval in System Settings. It only removes the
+quarantine flag from those trees; it does not disable Gatekeeper globally.
+
 More information can be found [here](https://amiga.sebastian-bergmann.de/presentations/2017/evoke/amiga-software-development-in-2017).
 
 ## VBCC
