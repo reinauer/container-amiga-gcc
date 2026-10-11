@@ -128,8 +128,8 @@ Options:
   --workdir DIR              Build workspace (default: ${workdir_default})
   --jobs N                   Parallel make jobs (default: nproc)
   --repo URL                 Main amiga-gcc repository URL
-  --cc PATH_OR_NAME          Host C compiler (default: prefer gcc-15/gcc)
-  --cxx PATH_OR_NAME         Host C++ compiler (default: prefer g++-15/g++)
+  --cc PATH_OR_NAME          Host C compiler (default: gcc; newest gcc-NN on macOS)
+  --cxx PATH_OR_NAME         Host C++ compiler (default: g++; newest g++-NN on macOS)
 ${package_option}
   --skip-amitools            Do not install amitools/Vamos into each prefix
   --reuse-source             Reuse existing per-version source trees
@@ -523,13 +523,8 @@ configure_macos_tools() {
 }
 
 configure_linux_tools() {
-  if [[ -z "$HOST_CC" ]]; then
-    HOST_CC="$(find_host_compiler gcc)"
-  fi
-
-  if [[ -z "$HOST_CXX" ]]; then
-    HOST_CXX="$(find_host_compiler g++)"
-  fi
+  HOST_CC="${HOST_CC:-gcc}"
+  HOST_CXX="${HOST_CXX:-g++}"
 
   verify_host_compiler "$HOST_CC" "C" "--cc"
   verify_host_compiler "$HOST_CXX" "C++" "--cxx"

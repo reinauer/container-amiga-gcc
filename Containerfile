@@ -1,4 +1,4 @@
-FROM ubuntu:25.10
+FROM ubuntu:26.04
 
 # Build arguments for configurable GCC branch
 #ARG BUILD_GCC_BRANCH=amiga13.4
