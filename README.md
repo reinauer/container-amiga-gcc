@@ -1,127 +1,147 @@
-# Containerfile for AmigaOS Cross-Compiler Toolchain
+# amiga-gcc toolchains for Linux and macOS
 
-`Containerfile` for [Stefan "Bebbo" Franke](https://github.com/bebbo)'s [amiga-gcc](https://github.com/bebbo/amiga-gcc) toolchain for Linux/AmigaOS cross-development.
+Build scripts, container images and prebuilt archives for the
+[AmigaPorts m68k-amigaos-gcc](https://github.com/AmigaPorts/m68k-amigaos-gcc)
+cross toolchain (the continuation of
+[Stefan "Bebbo" Franke](https://github.com/bebbo)'s amiga-gcc).
 
-This container is based on work by Sebastian Bergmann: [Docker Hub](https://hub.docker.com/r/sebastianbergmann/amiga-gcc/).
+One script, `build.sh`, builds the toolchain on Linux and macOS. The container
+image and the release archives are both produced with it, so all three ways of
+getting the toolchain give you the same installation.
 
-A ready-to-use image built from this Containerfile is available on [Docker Hub](https://hub.docker.com/r/stefanreinauer/amiga-gcc/).
-Docker Hub is the canonical image location.  The publish workflow mirrors the
-same version tags to this repository's GitHub Container Registry package.
+Supported GCC versions:
 
-Native Linux and macOS toolchains are also produced by the **Build native
-toolchain archives** GitHub Actions workflow. It creates Linux x86_64 and macOS
-ARM64 `.tar.xz` archives for each supported GCC version. An archive contains
-both the dated installation and its stable version symlink, for example:
+| Version  | amiga-gcc branch |
+|----------|------------------|
+| `6.5.0b` | `amiga6`         |
+| `13.4`   | `amiga13.4`      |
+| `16.2`   | `amiga16.2`      |
+
+## What is included
+
+Each installation is a self-contained prefix with:
+
+- GCC (C and C++) and binutils for `m68k-amigaos`, with HUNK LTO support
+- GDB, vasm, vlink and vbcc
+- libnix, ixemul, clib2, libpthread, libdebug and the AmigaOS NDK (3.2 by
+  default)
+- zlib, libpng and FreeType built for every multilib
+- amitools, including the [Vamos](https://github.com/cnvogelg/amitools)
+  AmigaOS emulator, `xdftool`, `romtool` and `hunktool`
+- FlexCat, fd2sfd, fd2pragma, sfdc, ira and gencrc
+
+## Getting the toolchain
+
+### Container image
+
+Images are published on [Docker Hub](https://hub.docker.com/r/stefanreinauer/amiga-gcc/),
+with the same tags mirrored to the GitHub Container Registry
+(`ghcr.io/reinauer/container-amiga-gcc`). Docker Hub is the canonical
+location.
+
+| Tag                      | Contents                       |
+|--------------------------|--------------------------------|
+| `gcc-v6.5.0b`, `latest`  | GCC 6.5.0b                     |
+| `gcc-v13.4`              | GCC 13.4                       |
+| `gcc-v16.2`              | GCC 16.2                       |
+| `gcc-vVERSION-YYYYMMDD`  | A specific dated build         |
+
+The toolchain is installed in `/opt/amiga` and is on `PATH`:
+
+```sh
+podman run --rm -v "$PWD:/src" -w /src stefanreinauer/amiga-gcc:gcc-v13.4 \
+  m68k-amigaos-gcc hello.c -o hello -noixemul
+```
+
+`docker` works the same way.
+
+### Prebuilt archives
+
+The **Build native toolchain archives** workflow builds `.tar.xz` archives
+for Linux x86_64 and macOS ARM64 for every supported version. Releases are
+published on the [Releases page](https://github.com/reinauer/container-amiga-gcc/releases);
+builds from every push to `main` are also kept as artifacts of their workflow
+run. An archive contains a dated installation and a stable symlink to it:
 
 ```
 opt/amiga-16.2-20260825/
 opt/amiga-16.2 -> amiga-16.2-20260825
 ```
 
-Install an archive at its intended absolute path with:
+Extract it at the root of the file system so that it lands in `/opt`:
 
-```
-$ sudo tar -xJf amiga-gcc-16.2-20260825-linux-x86_64.tar.xz -C /
+```sh
+sudo tar -xJf amiga-gcc-16.2-20260825-linux-x86_64.tar.xz -C /
+export PATH=/opt/amiga-16.2/bin:$PATH
 ```
 
-On macOS, browser downloads may carry a quarantine flag that causes an
-"Apple could not verify" warning for each executable. If you trust the
-downloaded toolchains, remove that flag recursively after extraction:
+Several versions and dates can be installed side by side.
+
+On macOS, browser downloads may carry a quarantine flag that triggers an
+"Apple could not verify" warning for every executable. If you trust the
+downloaded toolchain, remove the flag after extraction:
 
 ```sh
 sudo /usr/bin/xattr -rd com.apple.quarantine /opt/amiga-*-20261002/
 ```
 
-Replace `20261002` with your installation date. This covers all toolchain
-versions with that date, including internal compiler helpers, so individual
-executables do not need approval in System Settings. It only removes the
-quarantine flag from those trees; it does not disable Gatekeeper globally.
+Replace `20261002` with the date of your installation. This only clears the
+flag on those directories; it does not disable Gatekeeper.
 
-More information can be found [here](https://amiga.sebastian-bergmann.de/presentations/2017/evoke/amiga-software-development-in-2017).
+### Building from source
 
-## VBCC
-
-Both container and native builds install `bin/vc` as a wrapper. It sets
-`VBCC` to the installation's `m68k-amigaos/vbcc` directory and puts its
-`bin` directory first in `PATH` before running `libexec/vbcc/vc`. No manual
-`VBCC` setting is needed; the wrapper selects its own installation even if
-the caller has set `VBCC` for another toolchain.
-
-Configs live in `m68k-amigaos/vbcc/config`, using VBCC's standard config
-lookup. Use `vc hello.c -o hello` for the default config or
-`vc +aos68k hello.c -o hello` to select a target. The `aos68km`, `aos68kr`,
-`kick13`, and `kick13.config` names are also available. Explicit config
-paths and the usual current-directory overrides continue to work.
-
-## "Hello world!" Example
-
-### AmigaOS C API
-
-`hello.c` from [Radosław Kujawa](https://github.com/Sakura-IT/Amiga-programming-examples/tree/master/C/hello-world-amiga):
-
-```c
-#include <proto/exec.h>
-#include <proto/dos.h>
-
-int main(int argc, void *argv[])
-{
-    struct Library *SysBase;
-    struct Library *DOSBase;
-
-    SysBase = *((struct Library **)4UL);
-    DOSBase = OpenLibrary("dos.library", 0);
-
-    if (DOSBase) {
-        Write(Output(), "Hello world!\n", 13);
-        CloseLibrary(DOSBase);
-    }
-
-    return(0);
-}
+```sh
+./build.sh                       # 6.5.0b, 13.4 and 16.2 into /opt/amiga-vVERSION-YYYYMMDD
+./build.sh --version 16.2 --prefix /opt/amiga-16.2
 ```
 
+On Ubuntu the script installs missing packages with `apt-get` (`--skip-apt`
+to opt out). On macOS it installs its dependencies with Homebrew
+(`--skip-brew` to opt out) and builds with Homebrew GCC.
 
-### Standard C Library
+Run `./build.sh --help` for all options, including the NDK version, install
+prefix layout, host compilers and reuse of existing source trees.
 
-`hello.c` from [Radosław Kujawa](https://github.com/Sakura-IT/Amiga-programming-examples/tree/master/C/hello-world):
+To build a container image yourself:
 
-```c
-#include <stdio.h>
-
-int main()
-{
-    printf("Hello world!\n");
-
-    return(0);
-}
+```sh
+podman build --build-arg BUILD_GCC_VERSION=16.2 \
+  --build-arg BUILD_GCC_BRANCH=amiga16.2 -t amiga-gcc:16.2 .
 ```
 
+## Usage notes
 
-### Compilation
+### Running programs with Vamos
 
-```
-$ podman run -v $HOME:/host -it stefanreinauer/amiga-gcc \
-  m68k-amigaos-gcc /host/hello.c -o /host/hello -noixemul
-```
+Vamos runs AmigaOS command-line programs on the host, which is handy for
+tests and CI:
 
-
-### Execution
-
-#### Container-ized Emulation using FS-UAE
-
-The `docker-execute-amiga` script used below can be downloaded from [here](https://raw.githubusercontent.com/sebastianbergmann/docker-execute-amiga/master/docker-execute-amiga.sh).
-
-```
-$ docker-execute-amiga helloworld
+```sh
+m68k-amigaos-gcc hello.c -o hello -noixemul
+vamos hello
 ```
 
-![Screenshot](screenshot.png)
+### vbcc
 
+`bin/vc` is a wrapper that points `VBCC` at the installation's own
+`m68k-amigaos/vbcc` directory, so no environment setup is needed and a `VBCC`
+variable set for another toolchain is ignored.
 
-#### Container-ized Emulation using Virtual AmigaOS (vamos)
-
+```sh
+vc hello.c -o hello            # default config
+vc +aos68k hello.c -o hello    # select a target config
 ```
-$ podman run -v $HOME:/host stefanreinauer/amiga-gcc \
-  vamos -C 68020 /host/hello
-Hello world!
-```
+
+The available configs are `aos68k`, `aos68km`, `aos68kr` and `kick13`. They
+live in `m68k-amigaos/vbcc/config`, and explicit config paths and
+current-directory overrides work as usual.
+
+## History
+
+This repository started as a fork of
+[Sebastian Bergmann](https://github.com/sebastianbergmann)'s
+`container-amiga-gcc`, a Dockerfile that built amiga-gcc in a container.
+It has since been rewritten: the build now lives in `build.sh` and runs
+natively on Linux and macOS, several GCC versions are built and published
+side by side, and native toolchain archives are produced alongside the
+container images. Thanks to Sebastian for the original work.

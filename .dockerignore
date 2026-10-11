@@ -1,8 +1,5 @@
 bin
-build.xml
 Containerfile
 Dockerfile
 README.md
-screenshot.png
-test
 update_docker.sh
