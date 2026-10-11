@@ -7,6 +7,11 @@ on:
         description: Build date used in install paths (YYYYMMDD; defaults to today)
         required: false
         type: string
+      release:
+        description: Publish the archives as a GitHub release
+        required: false
+        type: boolean
+        default: true
   push:
     branches:
       - main
@@ -111,3 +116,46 @@ jobs:
           path: ${{ steps.archive.outputs.path }}
           archive: false
           if-no-files-found: error
+
+  release:
+    needs:
+      - metadata
+      - build
+    # Pushes to main only keep the archives as run artifacts; releases are
+    # cut deliberately from a manual run.
+    if: github.event_name == 'workflow_dispatch' && inputs.release
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download toolchain archives
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          BUILD_DATE: ${{ needs.metadata.outputs.build_date }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v${BUILD_DATE:0:4}-${BUILD_DATE:4:2}-${BUILD_DATE:6:2}"
+          archives=(dist/*.tar.xz)
+          if [[ ! -e "${archives[0]}" ]]; then
+            echo "No toolchain archives found" >&2
+            exit 1
+          fi
+
+          # A second run for the same build date replaces that release's
+          # archives instead of failing on the existing tag.
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "${archives[@]}" --clobber
+          else
+            gh release create "$tag" "${archives[@]}" \
+              --target "$GITHUB_SHA" \
+              --title "$tag" \
+              --generate-notes
+          fi
