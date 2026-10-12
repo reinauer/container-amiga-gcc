@@ -109,6 +109,38 @@ podman build --build-arg BUILD_GCC_VERSION=16.2 \
   --build-arg BUILD_GCC_BRANCH=amiga16.2 -t amiga-gcc:16.2 .
 ```
 
+## Publishing images
+
+Every push to `main` builds the images and publishes them to GHCR. Docker
+Hub is updated from there, without rebuilding:
+
+```sh
+docker login docker.io
+./copy_to_dockerhub.sh
+```
+
+`copy_to_dockerhub.sh` finds the newest dated build on GHCR, lists its tags
+(`gcc-vVERSION`, `gcc-vVERSION-YYYYMMDD` and `latest`) and asks before
+copying them. Tags that are already up to date are skipped. Use `--dry-run`
+to only list them and `--yes` to copy without asking.
+
+`update_docker.sh` builds all versions locally and pushes them to Docker Hub
+directly, asking before each step.
+
+Both scripts read the registry accounts from `registry.conf`. To publish from
+a fork, change the user and repository names there:
+
+```sh
+GITHUB_USER="reinauer"              # ghcr.io/GITHUB_USER/GITHUB_REPO
+GITHUB_REPO="container-amiga-gcc"
+DOCKERHUB_USER="stefanreinauer"     # docker.io/DOCKERHUB_USER/DOCKERHUB_REPO
+DOCKERHUB_REPO="amiga-gcc"
+```
+
+The `--repository`, `--source` and `--destination` options override these
+for a single run. The GitHub workflows don't use `registry.conf`; they
+publish to the GHCR package of the repository they run in.
+
 ## Usage notes
 
 ### Running programs with Vamos

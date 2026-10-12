@@ -14,13 +14,15 @@ Build and push Docker images for multiple GCC versions.
 Options:
   -n, --no-skip              Run all steps without prompting
   -r, --repository REPO      Publish to REPO instead of
-                              docker.io/stefanreinauer/amiga-gcc
+                              $DOCKERHUB_REPOSITORY
   -h, --help                 Show this help message
 EOF
 }
 
 # --- Configuration ---
-IMAGE_REPOSITORY="docker.io/stefanreinauer/amiga-gcc"
+# shellcheck source=registry.conf
+. "$(dirname "$0")/registry.conf"
+IMAGE_REPOSITORY="$DOCKERHUB_REPOSITORY"
 LOCAL_IMAGE_NAME="amiga-gcc"
 DOCKER_CLI="${DOCKER_CLI:-docker}"
 NO_SKIP=false
