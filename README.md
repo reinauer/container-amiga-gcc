@@ -102,10 +102,31 @@ to opt out). On macOS it installs its dependencies with Homebrew
 Run `./build.sh --help` for all options, including the NDK version, install
 prefix layout, host compilers and reuse of existing source trees.
 
-To build a container image yourself:
+### Building container images
+
+`update_docker.sh` builds the images the same way as the published ones: every
+supported version from its branch, tagged `gcc-vVERSION` and
+`gcc-vVERSION-YYYYMMDD`, with `latest` pointing at GCC 6.5.0b. CI runs this
+script too. Use `--no-push` to only build and tag them locally:
+
+```sh
+./update_docker.sh --no-push            # asks before each step
+./update_docker.sh --no-push --no-skip  # runs all steps without asking
+```
+
+Set `DOCKER_CLI=podman` to build with Podman instead of Docker.
+
+To build a single image by hand:
 
 ```sh
 podman build --build-arg BUILD_GCC_VERSION=16.2 \
+  --build-arg BUILD_GCC_BRANCH=amiga16.2 -t amiga-gcc:16.2 .
+```
+
+With Docker, name the `Containerfile` explicitly:
+
+```sh
+docker build -f Containerfile --build-arg BUILD_GCC_VERSION=16.2 \
   --build-arg BUILD_GCC_BRANCH=amiga16.2 -t amiga-gcc:16.2 .
 ```
 
@@ -124,8 +145,8 @@ docker login docker.io
 copying them. Tags that are already up to date are skipped. Use `--dry-run`
 to only list them and `--yes` to copy without asking.
 
-`update_docker.sh` builds all versions locally and pushes them to Docker Hub
-directly, asking before each step.
+Without `--no-push`, `update_docker.sh` builds all versions locally and
+pushes them to Docker Hub directly, asking before each step.
 
 Both scripts read the registry accounts from `registry.conf`. To publish from
 a fork, change the user and repository names there:

@@ -13,6 +13,7 @@ Build and push Docker images for multiple GCC versions.
 
 Options:
   -n, --no-skip              Run all steps without prompting
+      --no-push              Build and tag the images, but do not push them
   -r, --repository REPO      Publish to REPO instead of
                               $DOCKERHUB_REPOSITORY
   -h, --help                 Show this help message
@@ -26,12 +27,16 @@ IMAGE_REPOSITORY="$DOCKERHUB_REPOSITORY"
 LOCAL_IMAGE_NAME="amiga-gcc"
 DOCKER_CLI="${DOCKER_CLI:-docker}"
 NO_SKIP=false
+NO_PUSH=false
 
 # --- Parse command line arguments ---
 while [ "$#" -gt 0 ]; do
     case "$1" in
         -n|--no-skip)
             NO_SKIP=true
+            ;;
+        --no-push)
+            NO_PUSH=true
             ;;
         -r|--repository)
             if [ "$#" -lt 2 ]; then
@@ -106,6 +111,16 @@ ask_and_run() {
     echo
 }
 
+# Push an image unless --no-push was given.
+push_image() {
+    if [ "$NO_PUSH" = true ]; then
+        echo "Not pushing $1 (--no-push)."
+        echo
+        return
+    fi
+    ask_and_run "$DOCKER_CLI" push "$1"
+}
+
 # Get the current date in YYYYMMDD format.
 BUILD_DATE=$(date +%Y%m%d)
 # Write a value such as "-4" to .extra to append it to dated tags.
@@ -139,8 +154,8 @@ for GCC_VERSION_SPEC in "${GCC_VERSION_SPECS[@]}"; do
         -t "$LOCAL_TAG" .
     ask_and_run "$DOCKER_CLI" tag "$LOCAL_TAG" "$TAG_GCC_VERSION"
     ask_and_run "$DOCKER_CLI" tag "$LOCAL_TAG" "$TAG_GCC_VERSION_DATE"
-    ask_and_run "$DOCKER_CLI" push "$TAG_GCC_VERSION"
-    ask_and_run "$DOCKER_CLI" push "$TAG_GCC_VERSION_DATE"
+    push_image "$TAG_GCC_VERSION"
+    push_image "$TAG_GCC_VERSION_DATE"
 
     echo
 done
@@ -155,7 +170,7 @@ LOCAL_LATEST_TAG="${LOCAL_IMAGE_NAME}:gcc-v${LATEST_GCC_VERSION}-${BUILD_DATE}${
 LATEST_TAG="${IMAGE_REPOSITORY}:latest"
 
 ask_and_run "$DOCKER_CLI" tag "$LOCAL_LATEST_TAG" "$LATEST_TAG"
-ask_and_run "$DOCKER_CLI" push "$LATEST_TAG"
+push_image "$LATEST_TAG"
 
 echo
 echo "Script finished."
