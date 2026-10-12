@@ -135,6 +135,7 @@ for GCC_VERSION_SPEC in "${GCC_VERSION_SPECS[@]}"; do
         --no-cache \
         --build-arg "BUILD_GCC_BRANCH=${GCC_BRANCH}" \
         --build-arg "BUILD_GCC_VERSION=${GCC_VERSION}" \
+        -f Containerfile \
         -t "$LOCAL_TAG" .
     ask_and_run "$DOCKER_CLI" tag "$LOCAL_TAG" "$TAG_GCC_VERSION"
     ask_and_run "$DOCKER_CLI" tag "$LOCAL_TAG" "$TAG_GCC_VERSION_DATE"

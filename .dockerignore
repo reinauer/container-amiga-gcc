@@ -1,6 +1,5 @@
 bin
 Containerfile
-Dockerfile
 README.md
 update_docker.sh
 registry.conf
