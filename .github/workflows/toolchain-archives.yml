@@ -67,6 +67,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Build toolchain
+        id: build
         env:
           BUILD_DATE: ${{ needs.metadata.outputs.build_date }}
           GCC_VERSION: ${{ matrix.version }}
@@ -76,6 +77,45 @@ jobs:
             --date "$BUILD_DATE" \
             --prefix-template 'amiga-{version}-{date}' \
             --workdir "$RUNNER_TEMP/amiga-gcc-$GCC_VERSION"
+
+      - name: Collect build failure diagnostics
+        if: failure() && steps.build.outcome == 'failure'
+        env:
+          GCC_VERSION: ${{ matrix.version }}
+        run: |
+          workdir="$RUNNER_TEMP/amiga-gcc-$GCC_VERSION"
+          src="$workdir/amiga-gcc-$GCC_VERSION"
+          diagnostics="$RUNNER_TEMP/build-diagnostics"
+          mkdir -p "$diagnostics"
+
+          # Record the actual checkouts: make update follows upstream branches.
+          for repo in "$GITHUB_WORKSPACE" "$workdir/gencrc" "$src" "$src"/projects/*; do
+            if [[ -d "$repo/.git" ]]; then
+              printf '\n%s\n' "$repo"
+              git -C "$repo" rev-parse HEAD || true
+              git -C "$repo" status --short || true
+            fi
+          done > "$diagnostics/source-revisions.txt"
+
+          # Preserve directory names to distinguish multilib config logs.
+          if [[ -d "$workdir" ]]; then
+            while IFS= read -r -d '' file; do
+              dest="$diagnostics/${file#"$workdir/"}"
+              mkdir -p "$(dirname "$dest")"
+              cp "$file" "$dest"
+            done < <(find "$workdir" -type d -name .git -prune -o \
+              -type f \( -name config.log -o -path '*/log/*.log' \
+              -o -name .manifest -o -name .repos -o -name default-repos \) -print0)
+          fi
+
+      - name: Upload build failure diagnostics
+        if: failure() && steps.build.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-diagnostics-${{ matrix.archive_os }}-gcc-${{ matrix.version }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/build-diagnostics/
+          include-hidden-files: true
+          if-no-files-found: error
 
       - name: Create toolchain archive
         id: archive
