@@ -61,6 +61,7 @@ APT_PACKAGES=(
   patch
   perl
   python3
+  python3-dev
   python3-pip
   python3-venv
   rsync
