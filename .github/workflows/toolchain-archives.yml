@@ -40,7 +40,7 @@ jobs:
 
   build:
     needs: metadata
-    name: ${{ matrix.archive_os }} GCC ${{ matrix.version }}
+    name: ${{ matrix.archive_os }} ${{ matrix.toolchain.target }} GCC ${{ matrix.toolchain.version }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 360
 
@@ -50,10 +50,12 @@ jobs:
         os:
           - linux
           - macos
-        version:
-          - 6.5.0b
-          - "13.4"
-          - "16.2"
+        # name is the prefix and archive base name.
+        toolchain:
+          - { target: m68k-amigaos, version: 6.5.0b, name: amiga }
+          - { target: m68k-amigaos, version: "13.4", name: amiga }
+          - { target: m68k-amigaos, version: "16.2", name: amiga }
+          - { target: ppc-amigaos, version: "16.2", name: amiga-ppc }
         include:
           - os: linux
             runner: ubuntu-24.04
@@ -70,26 +72,29 @@ jobs:
         id: build
         env:
           BUILD_DATE: ${{ needs.metadata.outputs.build_date }}
-          GCC_VERSION: ${{ matrix.version }}
+          GCC_VERSION: ${{ matrix.toolchain.version }}
+          NAME: ${{ matrix.toolchain.name }}
+          TARGET: ${{ matrix.toolchain.target }}
         run: |
           ./build.sh \
+            --target "$TARGET" \
             --version "$GCC_VERSION" \
             --date "$BUILD_DATE" \
-            --prefix-template 'amiga-{version}-{date}' \
-            --workdir "$RUNNER_TEMP/amiga-gcc-$GCC_VERSION"
+            --prefix-template "$NAME-{version}-{date}" \
+            --workdir "$RUNNER_TEMP/$NAME-gcc-$GCC_VERSION"
 
       - name: Collect build failure diagnostics
         if: failure() && steps.build.outcome == 'failure'
         env:
-          GCC_VERSION: ${{ matrix.version }}
+          GCC_VERSION: ${{ matrix.toolchain.version }}
+          NAME: ${{ matrix.toolchain.name }}
         run: |
-          workdir="$RUNNER_TEMP/amiga-gcc-$GCC_VERSION"
-          src="$workdir/amiga-gcc-$GCC_VERSION"
+          workdir="$RUNNER_TEMP/$NAME-gcc-$GCC_VERSION"
           diagnostics="$RUNNER_TEMP/build-diagnostics"
           mkdir -p "$diagnostics"
 
           # Record the actual checkouts: make update follows upstream branches.
-          for repo in "$GITHUB_WORKSPACE" "$workdir/gencrc" "$src" "$src"/projects/*; do
+          for repo in "$GITHUB_WORKSPACE" "$workdir"/* "$workdir"/*/projects/*; do
             if [[ -d "$repo/.git" ]]; then
               printf '\n%s\n' "$repo"
               git -C "$repo" rev-parse HEAD || true
@@ -112,7 +117,7 @@ jobs:
         if: failure() && steps.build.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
-          name: build-diagnostics-${{ matrix.archive_os }}-gcc-${{ matrix.version }}-${{ github.run_attempt }}
+          name: build-diagnostics-${{ matrix.archive_os }}-${{ matrix.toolchain.name }}-gcc-${{ matrix.toolchain.version }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/build-diagnostics/
           include-hidden-files: true
           if-no-files-found: error
@@ -122,16 +127,18 @@ jobs:
         env:
           ARCHIVE_OS: ${{ matrix.archive_os }}
           BUILD_DATE: ${{ needs.metadata.outputs.build_date }}
-          GCC_VERSION: ${{ matrix.version }}
+          GCC_VERSION: ${{ matrix.toolchain.version }}
+          NAME: ${{ matrix.toolchain.name }}
+          TARGET: ${{ matrix.toolchain.target }}
         run: |
-          prefix_name="amiga-$GCC_VERSION-$BUILD_DATE"
-          link_name="amiga-$GCC_VERSION"
-          archive="$RUNNER_TEMP/amiga-gcc-$GCC_VERSION-$BUILD_DATE-$ARCHIVE_OS.tar.xz"
+          prefix_name="$NAME-$GCC_VERSION-$BUILD_DATE"
+          link_name="$NAME-$GCC_VERSION"
+          archive="$RUNNER_TEMP/$NAME-gcc-$GCC_VERSION-$BUILD_DATE-$ARCHIVE_OS.tar.xz"
 
           # GCC build trees can consume most of a hosted runner's disk. They
           # are not part of the installed toolchain, so reclaim that space
           # before creating and verifying a second, extracted archive copy.
-          rm -rf -- "$RUNNER_TEMP/amiga-gcc-$GCC_VERSION"
+          rm -rf -- "$RUNNER_TEMP/$NAME-gcc-$GCC_VERSION"
 
           sudo ln -sfn "$prefix_name" "/opt/$link_name"
           sudo chown -R 0:0 "/opt/$prefix_name"
@@ -141,10 +148,10 @@ jobs:
             "opt/$prefix_name" \
             "opt/$link_name"
 
-          verify_dir="$RUNNER_TEMP/archive-check-$GCC_VERSION"
+          verify_dir="$RUNNER_TEMP/archive-check-$NAME-$GCC_VERSION"
           mkdir -p "$verify_dir"
           tar -C "$verify_dir" -xJf "$archive"
-          test -x "$verify_dir/opt/$prefix_name/bin/m68k-amigaos-gcc"
+          test -x "$verify_dir/opt/$prefix_name/bin/$TARGET-gcc"
           test -L "$verify_dir/opt/$link_name"
           test "$(readlink "$verify_dir/opt/$link_name")" = "$prefix_name"
 

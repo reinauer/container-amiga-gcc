@@ -12,13 +12,14 @@ case "$CURRENT_OS" in
     ;;
 esac
 
+TARGET="m68k-amigaos"
 REPO_URL="https://github.com/AmigaPorts/m68k-amigaos-gcc"
 GCC_REPO_URL="https://github.com/AmigaPorts/gcc"
 GENCRC_REPO_URL="https://github.com/mbtaylor1982/gencrc.git"
 NDK_VERSION="3.2"
 PREFIX_ROOT="/opt"
 DATE_STAMP="${BUILD_DATE:-$(date +%Y%m%d)}"
-PREFIX_TEMPLATE="amiga-v{version}-{date}"
+PREFIX_TEMPLATE=""
 if [[ "$BUILD_HOST" == "mac" ]]; then
   WORKDIR="${SCRIPT_DIR}/.mac-build"
 else
@@ -34,6 +35,9 @@ HOST_CC="${CC:-}"
 HOST_CXX="${CXX:-}"
 GENCRC_BIN=""
 VERSION_SPECS=()
+BINUTILS_REF=""
+SDK_VERSION="54.16"
+SDK_ARCHIVE=""
 
 APT_PACKAGES=(
   apt-utils
@@ -64,6 +68,15 @@ APT_PACKAGES=(
   texinfo
   wget
   zip
+)
+
+# Additionally needed for ppc-amigaos, to build lha.
+PPC_APT_PACKAGES=(
+  libtool
+  m4
+)
+PPC_BREW_PACKAGES=(
+  libtool
 )
 
 BREW_PACKAGES=(
@@ -102,27 +115,39 @@ usage() {
   cat <<EOF
 Usage: ./build.sh [options]
 
-Build Bebbo/AmigaPorts m68k-amigaos-gcc natively on Linux or macOS using the
-same high-level steps as Containerfile.
+Build Bebbo/AmigaPorts m68k-amigaos-gcc, or the AmigaPorts ppc-amigaos
+(AmigaOS 4) toolchain, natively on Linux or macOS using the same high-level
+steps as Containerfile.
 
 Defaults:
-  versions:       6.5.0b, 13.4, 16.2
+  target:         m68k-amigaos
+  versions:       6.5.0b, 13.4, 16.2 (ppc-amigaos: 16.2)
   prefixes:       /opt/amiga-vVERSION-YYYYMMDD
+                  (ppc-amigaos: /opt/amiga-ppc-vVERSION-YYYYMMDD)
   NDK:            3.2
   Amiga LTO:      required
   source workdir: ${workdir_default}
 
 Options:
+  --target TARGET            m68k-amigaos or ppc-amigaos (default: m68k-amigaos)
   --ndk VERSION              NDK version passed to make (default: 3.2)
   --version VERSION[:BRANCH] Build one version; repeat for multiple versions
                              Known versions: 13.4 -> amiga13.4,
                              6.5.0b -> amiga6, 15.2 -> amiga15.2,
                              16.2 -> amiga16.2
+                             (ppc-amigaos: 16.2 -> stefan/ppc-amigaos-16.2)
+  --binutils-ref REF         ppc-amigaos: AmigaPorts/binutils-gdb ref
+                             (default: stefan/ppc-amigaos-2.46 for 16.2)
+  --sdk-version VERSION      ppc-amigaos: AmigaOS SDK, 54.16 or 54.25
+                             (default: 54.16)
+  --sdk-archive PATH         ppc-amigaos: use a local SDK_VERSION.lha instead
+                             of downloading it from Hyperion
   --prefix-root DIR          Install under DIR/TEMPLATE (default: /opt)
   --prefix DIR               Install a single requested version into DIR
   --prefix-template TEMPLATE Directory name under --prefix-root.
                              Supports {version} and {date}
-                             (default: amiga-v{version}-{date})
+                             (default: amiga-v{version}-{date}, or
+                             amiga-ppc-v{version}-{date} for ppc-amigaos)
   --date YYYYMMDD            Date stamp for the default prefix template
                              (default: today or BUILD_DATE)
   --workdir DIR              Build workspace (default: ${workdir_default})
@@ -132,10 +157,12 @@ Options:
   --cxx PATH_OR_NAME         Host C++ compiler (default: g++; newest g++-NN on macOS)
 ${package_option}
   --skip-amitools            Do not install amitools/Vamos into each prefix
+                             (m68k-amigaos only)
   --reuse-source             Reuse existing per-version source trees
                              Generated build directories are reused only when
                              they match the requested prefix
-  --link-default VERSION     Create/update /opt/amiga -> the matching versioned prefix
+  --link-default VERSION     Create/update /opt/amiga (ppc-amigaos: /opt/amiga-ppc)
+                             -> the matching versioned prefix
   -h, --help                 Show this help
 
 Examples:
@@ -145,6 +172,7 @@ Examples:
   ./build.sh --version 13.4 --prefix /opt/amiga-13.4-custom
   ./build.sh --cc gcc-12 --cxx g++-12
   ./build.sh --version 16.2 --prefix /opt/amiga-16.2
+  ./build.sh --target ppc-amigaos --prefix /opt/amiga-ppc
 EOF
 }
 
@@ -195,6 +223,26 @@ detect_jobs() {
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --target)
+        [[ $# -ge 2 ]] || die "--target requires a value"
+        TARGET="$2"
+        shift 2
+        ;;
+      --binutils-ref)
+        [[ $# -ge 2 ]] || die "--binutils-ref requires a value"
+        BINUTILS_REF="$2"
+        shift 2
+        ;;
+      --sdk-version)
+        [[ $# -ge 2 ]] || die "--sdk-version requires a value"
+        SDK_VERSION="$2"
+        shift 2
+        ;;
+      --sdk-archive)
+        [[ $# -ge 2 ]] || die "--sdk-archive requires a value"
+        SDK_ARCHIVE="$2"
+        shift 2
+        ;;
       --ndk)
         [[ $# -ge 2 ]] || die "--ndk requires a value"
         NDK_VERSION="$2"
@@ -283,9 +331,29 @@ parse_args() {
     esac
   done
 
-  if [[ ${#VERSION_SPECS[@]} -eq 0 ]]; then
-    VERSION_SPECS=("6.5.0b" "13.4" "16.2")
-  fi
+  case "$TARGET" in
+    m68k-amigaos)
+      if [[ ${#VERSION_SPECS[@]} -eq 0 ]]; then
+        VERSION_SPECS=("6.5.0b" "13.4" "16.2")
+      fi
+      if [[ -z "$PREFIX_TEMPLATE" ]]; then
+        PREFIX_TEMPLATE="amiga-v{version}-{date}"
+      fi
+      ;;
+    ppc-amigaos)
+      if [[ ${#VERSION_SPECS[@]} -eq 0 ]]; then
+        VERSION_SPECS=("16.2")
+      fi
+      if [[ -z "$PREFIX_TEMPLATE" ]]; then
+        PREFIX_TEMPLATE="amiga-ppc-v{version}-{date}"
+      fi
+      APT_PACKAGES+=("${PPC_APT_PACKAGES[@]}")
+      BREW_PACKAGES+=("${PPC_BREW_PACKAGES[@]}")
+      ;;
+    *)
+      die "unknown target: ${TARGET} (use m68k-amigaos or ppc-amigaos)"
+      ;;
+  esac
 
   if [[ -n "$PREFIX_OVERRIDE" && ${#VERSION_SPECS[@]} -ne 1 ]]; then
     die "--prefix requires exactly one --version"
@@ -322,6 +390,10 @@ branch_from_spec() {
   fi
 
   version="$(version_from_spec "$spec")"
+  if [[ "$TARGET" == "ppc-amigaos" ]]; then
+    ppc_gcc_ref_for_version "$version"
+    return
+  fi
   case "$version" in
     6.5.0b) printf '%s\n' "amiga6" ;;
     13.4) printf '%s\n' "amiga13.4" ;;
@@ -1139,26 +1211,29 @@ link_default_prefix() {
     return
   fi
 
-  local target
+  local target link="/opt/amiga"
+  if [[ "$TARGET" == "ppc-amigaos" ]]; then
+    link="/opt/amiga-ppc"
+  fi
   if [[ -n "$PREFIX_OVERRIDE" ]]; then
     target="$PREFIX_OVERRIDE"
   else
     target="$(prefix_for_version "$DEFAULT_SYMLINK_VERSION")"
   fi
-  [[ -d "$target" ]] || die "cannot link /opt/amiga; target does not exist: ${target}"
+  [[ -d "$target" ]] || die "cannot link ${link}; target does not exist: ${target}"
 
   case "$target" in
     /opt/*) ;;
     *) die "--link-default target must be under /opt: ${target}" ;;
   esac
 
-  log "Linking /opt/amiga -> ${target}"
+  log "Linking ${link} -> ${target}"
   if [[ "$(id -u)" -eq 0 ]]; then
-    ln -sfn "$target" /opt/amiga
+    ln -sfn "$target" "$link"
   elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-    sudo ln -sfn "$target" /opt/amiga
+    sudo ln -sfn "$target" "$link"
   else
-    die "cannot update /opt/amiga without root or passwordless sudo"
+    die "cannot update ${link} without root or passwordless sudo"
   fi
 }
 
@@ -1174,16 +1249,25 @@ main() {
     ensure_apt
     configure_linux_tools
   fi
-  prepare_gencrc
 
   local spec
-  for spec in "${VERSION_SPECS[@]}"; do
-    build_gcc_version "$spec"
-  done
+  if [[ "$TARGET" == "ppc-amigaos" ]]; then
+    for spec in "${VERSION_SPECS[@]}"; do
+      build_ppc_version "$spec"
+    done
+  else
+    prepare_gencrc
+    for spec in "${VERSION_SPECS[@]}"; do
+      build_gcc_version "$spec"
+    done
+  fi
 
   link_default_prefix
   log "Done"
 }
+
+# shellcheck source=ppc-amigaos.sh
+. "${SCRIPT_DIR}/ppc-amigaos.sh"
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   main "$@"

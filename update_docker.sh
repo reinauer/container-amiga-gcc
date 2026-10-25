@@ -76,6 +76,12 @@ GCC_VERSION_SPECS=(
     "16.2:amiga16.2"
 )
 
+# ppc-amigaos (AmigaOS 4) versions and their AmigaPorts/gcc refs. These are
+# tagged gcc-vVERSION-ppc.
+PPC_GCC_VERSION_SPECS=(
+    "16.2:stefan/ppc-amigaos-16.2"
+)
+
 LATEST_GCC_VERSION="6.5.0b"
 
 # Prompt the user, then execute the command without reparsing its arguments.
@@ -129,35 +135,43 @@ if [ -f .extra ]; then
     IFS= read -r EXTRA < .extra || true
 fi
 
-# --- Build and push each GCC version ---
-for GCC_VERSION_SPEC in "${GCC_VERSION_SPECS[@]}"; do
-    GCC_VERSION="${GCC_VERSION_SPEC%%:*}"
-    GCC_BRANCH="${GCC_VERSION_SPEC#*:}"
+# Build, tag and push one image. TARGET is m68k-amigaos or ppc-amigaos;
+# SUFFIX is appended to the version in the tags.
+build_image() {
+    local target="$1" version="$2" branch="$3" suffix="$4"
+    local local_tag tag_version tag_version_date
 
     echo "========================================"
-    echo "Building GCC ${GCC_VERSION} (branch: ${GCC_BRANCH})"
+    echo "Building ${target} GCC ${version} (branch: ${branch})"
     echo "========================================"
     echo
 
-    # Define tags for this version
-    LOCAL_TAG="${LOCAL_IMAGE_NAME}:gcc-v${GCC_VERSION}-${BUILD_DATE}${EXTRA}"
-    TAG_GCC_VERSION="${IMAGE_REPOSITORY}:gcc-v${GCC_VERSION}"
-    TAG_GCC_VERSION_DATE="${IMAGE_REPOSITORY}:gcc-v${GCC_VERSION}-${BUILD_DATE}${EXTRA}"
+    local_tag="${LOCAL_IMAGE_NAME}:gcc-v${version}${suffix}-${BUILD_DATE}${EXTRA}"
+    tag_version="${IMAGE_REPOSITORY}:gcc-v${version}${suffix}"
+    tag_version_date="${IMAGE_REPOSITORY}:gcc-v${version}${suffix}-${BUILD_DATE}${EXTRA}"
 
-    # Execute commands for this version
     ask_and_run "$DOCKER_CLI" build \
         --pull \
         --no-cache \
-        --build-arg "BUILD_GCC_BRANCH=${GCC_BRANCH}" \
-        --build-arg "BUILD_GCC_VERSION=${GCC_VERSION}" \
+        --build-arg "BUILD_TARGET=${target}" \
+        --build-arg "BUILD_GCC_BRANCH=${branch}" \
+        --build-arg "BUILD_GCC_VERSION=${version}" \
         -f Containerfile \
-        -t "$LOCAL_TAG" .
-    ask_and_run "$DOCKER_CLI" tag "$LOCAL_TAG" "$TAG_GCC_VERSION"
-    ask_and_run "$DOCKER_CLI" tag "$LOCAL_TAG" "$TAG_GCC_VERSION_DATE"
-    push_image "$TAG_GCC_VERSION"
-    push_image "$TAG_GCC_VERSION_DATE"
+        -t "$local_tag" .
+    ask_and_run "$DOCKER_CLI" tag "$local_tag" "$tag_version"
+    ask_and_run "$DOCKER_CLI" tag "$local_tag" "$tag_version_date"
+    push_image "$tag_version"
+    push_image "$tag_version_date"
 
     echo
+}
+
+# --- Build and push each GCC version ---
+for GCC_VERSION_SPEC in "${GCC_VERSION_SPECS[@]}"; do
+    build_image m68k-amigaos "${GCC_VERSION_SPEC%%:*}" "${GCC_VERSION_SPEC#*:}" ""
+done
+for GCC_VERSION_SPEC in "${PPC_GCC_VERSION_SPECS[@]}"; do
+    build_image ppc-amigaos "${GCC_VERSION_SPEC%%:*}" "${GCC_VERSION_SPEC#*:}" "-ppc"
 done
 
 # Optionally tag one of the currently built GCC versions as 'latest'
