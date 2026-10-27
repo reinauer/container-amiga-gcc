@@ -108,6 +108,16 @@ digest_of() {
         --format '{{.Manifest.Digest}}' 2>/dev/null || true
 }
 
+# imagetools create wraps a single-manifest image in a manifest list, so a
+# copy's digest differs from its source's.  List the digest of REF and of
+# each manifest it lists.
+copied_digests() {
+    local raw
+    raw="$(docker buildx imagetools inspect --raw "$1" 2>/dev/null)" || return 0
+    printf '%s\n' "$(digest_of "$1")"
+    jq -r '.manifests[]?.digest' <<<"$raw"
+}
+
 # --- List what would be copied ---
 echo "Latest build on $SOURCE_REPOSITORY: $latest_date"
 pending_tags=()
@@ -118,7 +128,7 @@ for tag in "${tags[@]}"; do
         echo "Cannot inspect $SOURCE_REPOSITORY:$tag" >&2
         exit 1
     fi
-    if [ "$(digest_of "$DEST_REPOSITORY:$tag")" = "$source_digest" ]; then
+    if grep -qxF "$source_digest" <<<"$(copied_digests "$DEST_REPOSITORY:$tag")"; then
         echo "  = $tag (up to date)"
         continue
     fi
