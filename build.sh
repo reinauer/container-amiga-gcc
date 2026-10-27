@@ -136,9 +136,9 @@ Options:
                              Known versions: 13.4 -> amiga13.4,
                              6.5.0b -> amiga6, 15.2 -> amiga15.2,
                              16.2 -> amiga16.2
-                             (ppc-amigaos: 16.2 -> stefan/ppc-amigaos-16.2)
+                             (ppc-amigaos: 16.2 -> amiga16.2)
   --binutils-ref REF         ppc-amigaos: AmigaPorts/binutils-gdb ref
-                             (default: stefan/ppc-amigaos-2.46 for 16.2)
+                             (default: amiga-2.46 for 16.2)
   --sdk-version VERSION      ppc-amigaos: AmigaOS SDK, 54.16 or 54.25
                              (default: 54.16)
   --sdk-archive PATH         ppc-amigaos: use a local SDK_VERSION.lha instead

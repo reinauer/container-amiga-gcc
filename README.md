@@ -18,11 +18,11 @@ Supported GCC versions:
 | `13.4`   | `amiga13.4`      |
 | `16.2`   | `amiga16.2`      |
 
-For `ppc-amigaos`, GCC 16.2 is built from the
-[AmigaPorts gcc](https://github.com/AmigaPorts/gcc) branch
-`stefan/ppc-amigaos-16.2` and binutils 2.46 from the
+`ppc-amigaos` GCC 16.2 is built from the same
+[AmigaPorts gcc](https://github.com/AmigaPorts/gcc) branch, `amiga16.2`, and
+binutils 2.46 from the
 [AmigaPorts binutils-gdb](https://github.com/AmigaPorts/binutils-gdb) branch
-`stefan/ppc-amigaos-2.46`.
+`amiga-2.46`.
 
 ## What is included
 
@@ -162,7 +162,7 @@ AmigaPorts/gcc ref as `BUILD_GCC_BRANCH`:
 ```sh
 podman build --build-arg BUILD_TARGET=ppc-amigaos \
   --build-arg BUILD_GCC_VERSION=16.2 \
-  --build-arg BUILD_GCC_BRANCH=stefan/ppc-amigaos-16.2 -t amiga-gcc:16.2-ppc .
+  --build-arg BUILD_GCC_BRANCH=amiga16.2 -t amiga-gcc:16.2-ppc .
 ```
 
 ## Publishing images

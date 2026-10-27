@@ -79,7 +79,7 @@ GCC_VERSION_SPECS=(
 # ppc-amigaos (AmigaOS 4) versions and their AmigaPorts/gcc refs. These are
 # tagged gcc-vVERSION-ppc.
 PPC_GCC_VERSION_SPECS=(
-    "16.2:stefan/ppc-amigaos-16.2"
+    "16.2:amiga16.2"
 )
 
 LATEST_GCC_VERSION="6.5.0b"

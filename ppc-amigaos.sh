@@ -19,7 +19,7 @@ CLIB4_REF="c640af22a7eea76260ac6ab631fb01ca96870576"
 # AmigaPorts/gcc ref for a ppc-amigaos GCC version.
 ppc_gcc_ref_for_version() {
   case "$1" in
-    16.2) printf '%s\n' "stefan/ppc-amigaos-16.2" ;;
+    16.2) printf '%s\n' "amiga16.2" ;;
     *) die "no ppc-amigaos branch mapping for GCC version $1; use --version $1:REF" ;;
   esac
 }
@@ -27,7 +27,7 @@ ppc_gcc_ref_for_version() {
 # AmigaPorts/binutils-gdb ref to pair with a ppc-amigaos GCC version.
 ppc_binutils_ref_for_version() {
   case "$1" in
-    16.2) printf '%s\n' "stefan/ppc-amigaos-2.46" ;;
+    16.2) printf '%s\n' "amiga-2.46" ;;
     *) die "no binutils mapping for GCC version $1; use --binutils-ref REF" ;;
   esac
 }
