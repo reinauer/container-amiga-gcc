@@ -177,8 +177,11 @@ docker login docker.io
 
 `copy_to_dockerhub.sh` finds the newest dated build on GHCR, lists its tags
 (`gcc-vVERSION`, `gcc-vVERSION-YYYYMMDD` and `latest`) and asks before
-copying them. Tags that are already up to date are skipped. Use `--dry-run`
-to only list them and `--yes` to copy without asking.
+copying them. It also points `latest` of the retired
+`stefanreinauer/amigappc-gcc` repository at the newest `gcc-vVERSION-ppc`
+image, for users of the old ppc-amigaos images. Tags that are already up to
+date are skipped. Use `--dry-run` to only list them and `--yes` to copy
+without asking.
 
 Without `--no-push`, `update_docker.sh` builds all versions locally and
 pushes them to Docker Hub directly, asking before each step.
@@ -192,6 +195,9 @@ GITHUB_REPO="container-amiga-gcc"
 DOCKERHUB_USER="stefanreinauer"     # docker.io/DOCKERHUB_USER/DOCKERHUB_REPO
 DOCKERHUB_REPO="amiga-gcc"
 ```
+
+A fork should also empty `DOCKERHUB_PPC_LEGACY_REPOSITORY`, which names the
+retired `amigappc-gcc` repository.
 
 The `--repository`, `--source` and `--destination` options override these
 for a single run. The GitHub workflows don't use `registry.conf`; they
