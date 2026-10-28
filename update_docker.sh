@@ -14,6 +14,8 @@ Build and push Docker images for multiple GCC versions.
 Options:
   -n, --no-skip              Run all steps without prompting
       --no-push              Build and tag the images, but do not push them
+      --gcc-version VER      Build only the images of GCC version VER, such as
+                              16.2; repeat for more
       --release-tag TAG      Build only the m68k-amigaos release TAG of
                               AmigaPorts/m68k-amigaos-gcc (such as
                               v16.2-rc21), tagged without its "v" (16.2-rc21);
@@ -33,6 +35,7 @@ DOCKER_CLI="${DOCKER_CLI:-docker}"
 NO_SKIP=false
 NO_PUSH=false
 RELEASE_TAG=""
+SELECTED_VERSIONS=()
 
 # --- Parse command line arguments ---
 while [ "$#" -gt 0 ]; do
@@ -54,6 +57,18 @@ while [ "$#" -gt 0 ]; do
             ;;
         --repository=*)
             IMAGE_REPOSITORY="${1#*=}"
+            ;;
+        --gcc-version)
+            if [ "$#" -lt 2 ]; then
+                echo "Missing value for $1" >&2
+                usage >&2
+                exit 1
+            fi
+            SELECTED_VERSIONS+=("$2")
+            shift
+            ;;
+        --gcc-version=*)
+            SELECTED_VERSIONS+=("${1#*=}")
             ;;
         --release-tag)
             if [ "$#" -lt 2 ]; then
@@ -100,6 +115,39 @@ PPC_GCC_VERSION_SPECS=(
 )
 
 LATEST_GCC_VERSION="16.2"
+
+# --gcc-version narrows both lists to the versions given.  latest, an
+# m68k-amigaos image, moves only when its version is among those built.
+TAG_LATEST=true
+if [ "${#SELECTED_VERSIONS[@]}" -gt 0 ]; then
+    M68K_SPECS=()
+    PPC_SPECS=()
+    TAG_LATEST=false
+    for VERSION in "${SELECTED_VERSIONS[@]}"; do
+        FOUND=false
+        for GCC_VERSION_SPEC in "${GCC_VERSION_SPECS[@]}"; do
+            if [ "${GCC_VERSION_SPEC%%:*}" = "$VERSION" ]; then
+                M68K_SPECS+=("$GCC_VERSION_SPEC")
+                FOUND=true
+                if [ "$VERSION" = "$LATEST_GCC_VERSION" ]; then
+                    TAG_LATEST=true
+                fi
+            fi
+        done
+        for GCC_VERSION_SPEC in "${PPC_GCC_VERSION_SPECS[@]}"; do
+            if [ "${GCC_VERSION_SPEC%%:*}" = "$VERSION" ]; then
+                PPC_SPECS+=("$GCC_VERSION_SPEC")
+                FOUND=true
+            fi
+        done
+        if [ "$FOUND" != true ]; then
+            echo "Unknown GCC version: $VERSION" >&2
+            exit 1
+        fi
+    done
+    GCC_VERSION_SPECS=("${M68K_SPECS[@]}")
+    PPC_GCC_VERSION_SPECS=("${PPC_SPECS[@]}")
+fi
 
 # Prompt the user, then execute the command without reparsing its arguments.
 ask_and_run() {
@@ -225,6 +273,11 @@ done
 for GCC_VERSION_SPEC in "${PPC_GCC_VERSION_SPECS[@]}"; do
     build_image ppc-amigaos "${GCC_VERSION_SPEC%%:*}" "${GCC_VERSION_SPEC#*:}" "-ppc"
 done
+
+if [ "$TAG_LATEST" != true ]; then
+    echo "Script finished."
+    exit 0
+fi
 
 # Optionally tag one of the currently built GCC versions as 'latest'
 echo "========================================"
