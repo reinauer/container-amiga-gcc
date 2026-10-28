@@ -29,6 +29,7 @@ JOBS=""
 INSTALL_PACKAGES=1
 INSTALL_AMITOOLS=1
 REUSE_SOURCE=0
+RELEASE_TAG=""
 DEFAULT_SYMLINK_VERSION=""
 PREFIX_OVERRIDE=""
 HOST_CC="${CC:-}"
@@ -145,6 +146,10 @@ Options:
   --workdir DIR              Build workspace (default: ${workdir_default})
   --jobs N                   Parallel make jobs (default: nproc)
   --repo URL                 Main amiga-gcc repository URL
+  --release-tag TAG          m68k-amigaos: build the release TAG (such as
+                             v16.2-rc21) of the main repository, with every
+                             module at its m68k-amigaos-gcc-TAG tag instead of
+                             its branch; needs exactly one --version
   --cc PATH_OR_NAME          Host C compiler (default: gcc; newest gcc-NN on macOS)
   --cxx PATH_OR_NAME         Host C++ compiler (default: g++; newest g++-NN on macOS)
 ${package_option}
@@ -164,6 +169,7 @@ Examples:
   ./build.sh --version 13.4 --prefix /opt/amiga-13.4-custom
   ./build.sh --cc gcc-12 --cxx g++-12
   ./build.sh --version 16.2 --prefix /opt/amiga-16.2
+  ./build.sh --version 16.2 --release-tag v16.2-rc21
   ./build.sh --target ppc-amigaos --prefix /opt/amiga-ppc
 EOF
 }
@@ -243,6 +249,11 @@ parse_args() {
       --version)
         [[ $# -ge 2 ]] || die "--version requires a value"
         VERSION_SPECS+=("$2")
+        shift 2
+        ;;
+      --release-tag)
+        [[ $# -ge 2 ]] || die "--release-tag requires a value"
+        RELEASE_TAG="$2"
         shift 2
         ;;
       --prefix-root)
@@ -347,6 +358,12 @@ parse_args() {
 
   if [[ -n "$PREFIX_OVERRIDE" && ${#VERSION_SPECS[@]} -ne 1 ]]; then
     die "--prefix requires exactly one --version"
+  fi
+
+  if [[ -n "$RELEASE_TAG" ]]; then
+    [[ "$TARGET" == "m68k-amigaos" ]] || die "--release-tag is for m68k-amigaos only"
+    [[ ${#VERSION_SPECS[@]} -eq 1 ]] || die "--release-tag requires exactly one --version"
+    [[ "$REUSE_SOURCE" -eq 0 ]] || die "--release-tag builds from a fresh checkout; drop --reuse-source"
   fi
 
 }
@@ -777,9 +794,9 @@ prepare_source() {
   fi
 
   if [[ ! -d "${src}/.git" ]]; then
-    log "Cloning ${REPO_URL} for GCC ${version}"
+    log "Cloning ${REPO_URL}${RELEASE_TAG:+ at ${RELEASE_TAG}} for GCC ${version}"
     mkdir -p "$(dirname "$src")"
-    git clone --depth 1 "$REPO_URL" "$src"
+    git clone --depth 1 ${RELEASE_TAG:+--branch "$RELEASE_TAG"} "$REPO_URL" "$src"
   else
     log "Reusing source tree ${src}"
     warn_if_reused_checkout_stale "$src" "amiga-gcc"
@@ -1034,7 +1051,13 @@ build_gcc_version() {
   prepare_source "$version" "$src"
 
   log "Building and installing GCC ${version} into ${prefix}"
-  make_amiga "$src" branch branch="$branch" mod=gcc
+  if [[ -n "$RELEASE_TAG" ]]; then
+    # release-tag tags every module m68k-amigaos-gcc-TAG; make update then
+    # fetches each one at that tag
+    make_amiga "$src" v ref="m68k-amigaos-gcc-${RELEASE_TAG}"
+  else
+    make_amiga "$src" branch branch="$branch" mod=gcc
+  fi
   make_amiga "$src" update NDK="$ndk" PREFIX="$prefix"
   patch_libdebug_ordering "$src"
   patch_newlib_binutils_ordering "$src"

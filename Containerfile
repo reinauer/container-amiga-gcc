@@ -8,6 +8,11 @@ FROM ubuntu:26.04
 ARG BUILD_GCC_BRANCH=amiga6
 ARG BUILD_GCC_VERSION=6.5.0b
 
+# A release tag of AmigaPorts/m68k-amigaos-gcc, such as v16.2-rc21: every
+# module is built at its m68k-amigaos-gcc-TAG tag, and BUILD_GCC_BRANCH is
+# ignored.  m68k-amigaos only.
+ARG BUILD_RELEASE_TAG=""
+
 # NDK version - defaults to 3.2 for all GCC versions
 ARG NDK_VERSION
 
@@ -32,6 +37,7 @@ RUN if [ "${BUILD_TARGET}" = ppc-amigaos ]; then \
     /root/container-amiga-gcc/build.sh \
       --target "${BUILD_TARGET}" \
       --version "${BUILD_GCC_VERSION}:${BUILD_GCC_BRANCH}" \
+      ${BUILD_RELEASE_TAG:+--release-tag "${BUILD_RELEASE_TAG}"} \
       --ndk "${NDK_VERSION:-3.2}" \
       --prefix-template "${prefix_template}" \
       --workdir /root/.amiga-gcc-build \
@@ -55,4 +61,5 @@ ENV PATH=/opt/amiga/bin:/opt/amiga-ppc/bin:$PATH
 LABEL gcc.target="${BUILD_TARGET}"
 LABEL gcc.version="${BUILD_GCC_VERSION}"
 LABEL gcc.branch="${BUILD_GCC_BRANCH}"
+LABEL gcc.release_tag="${BUILD_RELEASE_TAG}"
 LABEL gcc.amiga_lto="1"

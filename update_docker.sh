@@ -14,6 +14,10 @@ Build and push Docker images for multiple GCC versions.
 Options:
   -n, --no-skip              Run all steps without prompting
       --no-push              Build and tag the images, but do not push them
+      --release-tag TAG      Build only the m68k-amigaos release TAG of
+                              AmigaPorts/m68k-amigaos-gcc (such as
+                              v16.2-rc21), tagged without its "v" (16.2-rc21);
+                              latest is left alone
   -r, --repository REPO      Publish to REPO instead of
                               $DOCKERHUB_REPOSITORY
   -h, --help                 Show this help message
@@ -28,6 +32,7 @@ LOCAL_IMAGE_NAME="amiga-gcc"
 DOCKER_CLI="${DOCKER_CLI:-docker}"
 NO_SKIP=false
 NO_PUSH=false
+RELEASE_TAG=""
 
 # --- Parse command line arguments ---
 while [ "$#" -gt 0 ]; do
@@ -49,6 +54,18 @@ while [ "$#" -gt 0 ]; do
             ;;
         --repository=*)
             IMAGE_REPOSITORY="${1#*=}"
+            ;;
+        --release-tag)
+            if [ "$#" -lt 2 ]; then
+                echo "Missing value for $1" >&2
+                usage >&2
+                exit 1
+            fi
+            RELEASE_TAG="$2"
+            shift
+            ;;
+        --release-tag=*)
+            RELEASE_TAG="${1#*=}"
             ;;
         -h|--help)
             usage
@@ -165,6 +182,41 @@ build_image() {
 
     echo
 }
+
+# Build, tag and push the image of one release tag, such as v16.2-rc21.
+# The GCC version is the tag without its "v" and its "-rcN" suffix.
+build_release_image() {
+    local tag="$1" version local_tag image_tag
+
+    version="${tag#v}"
+    version="${version%%-*}"
+
+    echo "========================================"
+    echo "Building m68k-amigaos release ${tag} (GCC ${version})"
+    echo "========================================"
+    echo
+
+    local_tag="${LOCAL_IMAGE_NAME}:${tag#v}"
+    image_tag="${IMAGE_REPOSITORY}:${tag#v}"
+
+    ask_and_run "$DOCKER_CLI" build \
+        --pull \
+        --no-cache \
+        --build-arg "BUILD_TARGET=m68k-amigaos" \
+        --build-arg "BUILD_GCC_BRANCH=${tag}" \
+        --build-arg "BUILD_GCC_VERSION=${version}" \
+        --build-arg "BUILD_RELEASE_TAG=${tag}" \
+        -f Containerfile \
+        -t "$local_tag" .
+    ask_and_run "$DOCKER_CLI" tag "$local_tag" "$image_tag"
+    push_image "$image_tag"
+}
+
+if [ -n "$RELEASE_TAG" ]; then
+    build_release_image "$RELEASE_TAG"
+    echo "Script finished."
+    exit 0
+fi
 
 # --- Build and push each GCC version ---
 for GCC_VERSION_SPEC in "${GCC_VERSION_SPECS[@]}"; do
