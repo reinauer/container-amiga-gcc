@@ -33,7 +33,8 @@ Each `m68k-amigaos` installation is a self-contained prefix with:
 - libnix, ixemul, clib2, libpthread, libdebug and the AmigaOS NDK (3.2 by
   default)
 - zlib, libpng and FreeType built for every multilib
-- amitools, including the [Vamos](https://github.com/cnvogelg/amitools)
+- amitools ([reinauer/amitools](https://github.com/reinauer/amitools),
+  `Drop_AccessStruct`), including the Vamos
   AmigaOS emulator, `xdftool`, `romtool` and `hunktool`
 - FlexCat, fd2sfd, fd2pragma, sfdc, ira and gencrc
 
