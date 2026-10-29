@@ -71,15 +71,6 @@ APT_PACKAGES=(
   zip
 )
 
-# Additionally needed for ppc-amigaos, to build lha.
-PPC_APT_PACKAGES=(
-  libtool
-  m4
-)
-PPC_BREW_PACKAGES=(
-  libtool
-)
-
 BREW_PACKAGES=(
   bash
   wget
@@ -348,8 +339,6 @@ parse_args() {
       if [[ -z "$PREFIX_TEMPLATE" ]]; then
         PREFIX_TEMPLATE="amiga-ppc-v{version}-{date}"
       fi
-      APT_PACKAGES+=("${PPC_APT_PACKAGES[@]}")
-      BREW_PACKAGES+=("${PPC_BREW_PACKAGES[@]}")
       ;;
     *)
       die "unknown target: ${TARGET} (use m68k-amigaos or ppc-amigaos)"
