@@ -80,7 +80,21 @@ The **Build native toolchain archives** workflow builds `.tar.xz` archives
 for Linux x86_64 and macOS ARM64 for every supported version. Releases are
 published on the [Releases page](https://github.com/reinauer/container-amiga-gcc/releases);
 builds from every push to `main` are also kept as artifacts of their workflow
-run. An archive contains a dated installation and a stable symlink to it:
+run.
+
+A release is cut by running the workflow by hand; it tags the commit it ran
+from with the build date, such as `v2026-10-28`. Given a release tag of
+[AmigaPorts/m68k-amigaos-gcc](https://github.com/AmigaPorts/m68k-amigaos-gcc/tags),
+GCC 16.2 is built from that release instead of the branches, for
+m68k-amigaos and ppc-amigaos alike, and the release is named after both
+(`v2026-10-28-16.2-rc21`). A new upstream release needs no change here, just
+another run:
+
+```sh
+gh workflow run toolchain-archives.yml -f release_tag=v16.2-rc22
+```
+
+An archive contains a dated installation and a stable symlink to it:
 
 ```
 opt/amiga-16.2-20260825/
