@@ -30,6 +30,7 @@ INSTALL_PACKAGES=1
 INSTALL_AMITOOLS=1
 REUSE_SOURCE=0
 RELEASE_TAG=""
+RELEASE_TAG_GIVEN=0
 DEFAULT_SYMLINK_VERSION=""
 PREFIX_OVERRIDE=""
 HOST_CC="${CC:-}"
@@ -263,6 +264,7 @@ parse_args() {
       --release-tag)
         [[ $# -ge 2 ]] || die "--release-tag requires a value"
         RELEASE_TAG="$2"
+        RELEASE_TAG_GIVEN=1
         shift 2
         ;;
       --prefix-root)
@@ -371,10 +373,17 @@ parse_args() {
     die "--prefix requires exactly one --version"
   fi
 
-  if [[ -n "$RELEASE_TAG" ]]; then
+  if [[ "$RELEASE_TAG_GIVEN" -eq 1 ]]; then
+    local release_tag_re='^v[0-9]+(\.[0-9]+)*(-rc[0-9]+)?$' tag_version
+    [[ "$RELEASE_TAG" =~ $release_tag_re ]] ||
+      die "not a release tag: '${RELEASE_TAG}' (such as v16.2-rc21 or v16.2)"
     [[ "$TARGET" == "m68k-amigaos" ]] || die "--release-tag is for m68k-amigaos only"
     [[ ${#VERSION_SPECS[@]} -eq 1 ]] || die "--release-tag requires exactly one --version"
     [[ "$REUSE_SOURCE" -eq 0 ]] || die "--release-tag builds from a fresh checkout; drop --reuse-source"
+    tag_version="${RELEASE_TAG#v}"
+    tag_version="${tag_version%%-*}"
+    [[ "$(version_from_spec "${VERSION_SPECS[0]}")" == "$tag_version" ]] ||
+      die "--version $(version_from_spec "${VERSION_SPECS[0]}") does not match release ${RELEASE_TAG}, which is GCC ${tag_version}"
   fi
 
 }
@@ -808,6 +817,11 @@ prepare_source() {
     log "Cloning ${REPO_URL}${RELEASE_TAG:+ at ${RELEASE_TAG}} for GCC ${version}"
     mkdir -p "$(dirname "$src")"
     git clone --depth 1 ${RELEASE_TAG:+--branch "$RELEASE_TAG"} "$REPO_URL" "$src"
+    # Before v16.2-rc18 there is no scripts/checkout, and make v ignores
+    # ref= and leaves every module at its branch head.
+    if [[ -n "$RELEASE_TAG" && ! -x "${src}/scripts/checkout" ]]; then
+      die "release ${RELEASE_TAG} predates scripts/checkout, which make v needs; use v16.2-rc18 or later"
+    fi
   else
     log "Reusing source tree ${src}"
     warn_if_reused_checkout_stale "$src" "amiga-gcc"
@@ -1056,7 +1070,7 @@ build_gcc_version() {
   fi
   src="${WORKDIR}/amiga-gcc-${version}"
 
-  log "Building GCC ${version} (${branch}) with NDK ${ndk}"
+  log "Building GCC ${version} (${RELEASE_TAG:+release ${RELEASE_TAG}, not branch }${branch}) with NDK ${ndk}"
   ensure_prefix_writable "$prefix"
   install_amitools "$prefix"
   prepare_source "$version" "$src"
