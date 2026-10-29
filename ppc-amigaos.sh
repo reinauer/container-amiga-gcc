@@ -52,6 +52,11 @@ ppc_fetch_repo() {
 }
 
 # The SDK is an lha archive that lhasa cannot fully unpack, so build the
+# autoconf builds with -g -O2 when no flags are given, which makes the Linux
+# executables (and the target libraries on any host) several times their
+# size.  Leave out -g, as the m68k-amigaos build does.
+PPC_HOST_FLAGS=(CFLAGS=-O2 CXXFLAGS=-O2)
+
 # jca02266 lha port, from AmigaPorts' fork as the m68k build does: it
 # carries the generated autotools files, so it needs no autoreconf.  It is
 # installed into the prefix, as the m68k build does with its own lha.
@@ -67,7 +72,7 @@ ppc_install_lha() {
   log "Building lha"
   (
     cd "$src"
-    ./configure --prefix="$prefix"
+    ./configure --prefix="$prefix" "${PPC_HOST_FLAGS[@]}"
     "$MAKE_BIN" -j "$JOBS"
     "$MAKE_BIN" install
   )
@@ -102,7 +107,7 @@ ppc_build_binutils() {
     "${src}/configure" --target="$PPC_TARGET" --prefix="$prefix" \
       --disable-nls --without-msgpack \
       --disable-gdb --disable-gdbserver --disable-sim --disable-gprofng \
-      "${PPC_DEP_ARGS[@]}"
+      "${PPC_HOST_FLAGS[@]}" "${PPC_DEP_ARGS[@]}"
     "$MAKE_BIN" -j "$JOBS"
     "$MAKE_BIN" install
   )
@@ -173,6 +178,8 @@ ppc_configure_gcc() {
       --enable-threads=amigaos --enable-lto \
       --with-dwarf2 --disable-tls --disable-libstdcxx-pch \
       --disable-c++tools --disable-nls --disable-bootstrap \
+      "${PPC_HOST_FLAGS[@]}" \
+      CFLAGS_FOR_TARGET=-O2 CXXFLAGS_FOR_TARGET=-O2 \
       "${PPC_DEP_ARGS[@]}"
   )
 }
