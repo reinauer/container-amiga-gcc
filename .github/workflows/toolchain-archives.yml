@@ -50,8 +50,8 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           if [[ -n "$RELEASE_TAG" ]]; then
-            if [[ ! "$RELEASE_TAG" =~ ^v16\.2-rc[0-9]+$ ]]; then
-              echo "Invalid release tag: $RELEASE_TAG (expected v16.2-rcN)" >&2
+            if [[ ! "$RELEASE_TAG" =~ ^v16\.2(-rc[0-9]+)?$ ]]; then
+              echo "Invalid release tag: $RELEASE_TAG (expected v16.2 or v16.2-rcN)" >&2
               exit 1
             fi
             git ls-remote --exit-code --tags \
