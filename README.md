@@ -56,9 +56,9 @@ location.
 
 | Tag                      | Contents                       |
 |--------------------------|--------------------------------|
-| `gcc-v6.5.0b`, `latest`  | GCC 6.5.0b                     |
+| `gcc-v6.5.0b`            | GCC 6.5.0b                     |
 | `gcc-v13.4`              | GCC 13.4                       |
-| `gcc-v16.2`              | GCC 16.2                       |
+| `gcc-v16.2`, `latest`    | GCC 16.2                       |
 | `gcc-v16.2-ppc`          | GCC 16.2 for `ppc-amigaos`     |
 | `gcc-vVERSION-YYYYMMDD`  | A specific dated build         |
 
@@ -132,7 +132,7 @@ downloading it.
 `update_docker.sh` builds the images the same way as the published ones: every
 supported version from its branch, tagged `gcc-vVERSION` and
 `gcc-vVERSION-YYYYMMDD` (`gcc-vVERSION-ppc` and `gcc-vVERSION-ppc-YYYYMMDD`
-for `ppc-amigaos`), with `latest` pointing at GCC 6.5.0b. CI runs this
+for `ppc-amigaos`), with `latest` pointing at GCC 16.2. CI runs this
 script too. Use `--no-push` to only build and tag them locally:
 
 ```sh
