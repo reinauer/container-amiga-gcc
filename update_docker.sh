@@ -82,7 +82,7 @@ PPC_GCC_VERSION_SPECS=(
     "16.2:amiga16.2"
 )
 
-LATEST_GCC_VERSION="6.5.0b"
+LATEST_GCC_VERSION="16.2"
 
 # Prompt the user, then execute the command without reparsing its arguments.
 ask_and_run() {
