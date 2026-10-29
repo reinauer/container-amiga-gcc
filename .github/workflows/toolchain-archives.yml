@@ -229,27 +229,30 @@ jobs:
           RELEASE_TAG: ${{ needs.metadata.outputs.release_tag }}
         run: |
           tag="v${BUILD_DATE:0:4}-${BUILD_DATE:4:2}-${BUILD_DATE:6:2}"
-          notes=()
-          # Name a release built from a release tag after it too, so that the
-          # name says what it holds and two on the same day don't collide.
-          if [[ -n "$RELEASE_TAG" ]]; then
-            tag="${tag}-${RELEASE_TAG#v}"
-            notes=(--notes "GCC 16.2 for m68k-amigaos and ppc-amigaos is built from [AmigaPorts/m68k-amigaos-gcc ${RELEASE_TAG}](https://github.com/AmigaPorts/m68k-amigaos-gcc/releases/tag/${RELEASE_TAG}); the other versions from their branches.")
-          fi
           archives=(dist/*.tar.xz)
           if [[ ! -e "${archives[0]}" ]]; then
             echo "No toolchain archives found" >&2
             exit 1
           fi
 
+          # Say which release tag GCC 16.2 came from, if any, ahead of the
+          # generated notes.
+          notes="$(gh api "repos/${GH_REPO}/releases/generate-notes" \
+            -f tag_name="$tag" -f target_commitish="$GITHUB_SHA" --jq .body)"
+          if [[ -n "$RELEASE_TAG" ]]; then
+            notes="GCC 16.2 for m68k-amigaos and ppc-amigaos is built from [AmigaPorts/m68k-amigaos-gcc ${RELEASE_TAG}](https://github.com/AmigaPorts/m68k-amigaos-gcc/releases/tag/${RELEASE_TAG}); the other versions from their branches.
+
+          ${notes}"
+          fi
+
           # A second run for the same build date replaces that release's
-          # archives instead of failing on the existing tag.
+          # archives and notes instead of failing on the existing tag.
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" "${archives[@]}" --clobber
+            gh release edit "$tag" --notes "$notes"
           else
             gh release create "$tag" "${archives[@]}" \
               --target "$GITHUB_SHA" \
               --title "$tag" \
-              "${notes[@]}" \
-              --generate-notes
+              --notes "$notes"
           fi
