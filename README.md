@@ -83,12 +83,12 @@ builds from every push to `main` are also kept as artifacts of their workflow
 run.
 
 A release is cut by running the workflow by hand; it tags the commit it ran
-from with the build date, such as `v2026-10-28`. Given a release tag of
+from with the build date, such as `v2026-10-28`, and another run on the same
+day replaces that release. Given a release tag of
 [AmigaPorts/m68k-amigaos-gcc](https://github.com/AmigaPorts/m68k-amigaos-gcc/tags),
 GCC 16.2 is built from that release instead of the branches, for
-m68k-amigaos and ppc-amigaos alike, and the release is named after both
-(`v2026-10-28-16.2-rc21`). A new upstream release needs no change here, just
-another run:
+m68k-amigaos and ppc-amigaos alike, and the release notes say so. A new
+upstream release needs no change here, just another run:
 
 ```sh
 gh workflow run toolchain-archives.yml -f release_tag=v16.2-rc22
