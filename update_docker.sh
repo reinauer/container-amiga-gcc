@@ -35,7 +35,18 @@ DOCKER_CLI="${DOCKER_CLI:-docker}"
 NO_SKIP=false
 NO_PUSH=false
 RELEASE_TAG=""
+RELEASE_TAG_GIVEN=false
 SELECTED_VERSIONS=()
+
+# Exit with the usage unless option $1 has a value after it; $2 is the
+# number of arguments left, the option included.
+need_value() {
+    if [ "$2" -lt 2 ]; then
+        echo "Missing value for $1" >&2
+        usage >&2
+        exit 1
+    fi
+}
 
 # --- Parse command line arguments ---
 while [ "$#" -gt 0 ]; do
@@ -47,11 +58,7 @@ while [ "$#" -gt 0 ]; do
             NO_PUSH=true
             ;;
         -r|--repository)
-            if [ "$#" -lt 2 ]; then
-                echo "Missing value for $1" >&2
-                usage >&2
-                exit 1
-            fi
+            need_value "$1" "$#"
             IMAGE_REPOSITORY="$2"
             shift
             ;;
@@ -59,11 +66,7 @@ while [ "$#" -gt 0 ]; do
             IMAGE_REPOSITORY="${1#*=}"
             ;;
         --gcc-version)
-            if [ "$#" -lt 2 ]; then
-                echo "Missing value for $1" >&2
-                usage >&2
-                exit 1
-            fi
+            need_value "$1" "$#"
             SELECTED_VERSIONS+=("$2")
             shift
             ;;
@@ -71,16 +74,14 @@ while [ "$#" -gt 0 ]; do
             SELECTED_VERSIONS+=("${1#*=}")
             ;;
         --release-tag)
-            if [ "$#" -lt 2 ]; then
-                echo "Missing value for $1" >&2
-                usage >&2
-                exit 1
-            fi
+            need_value "$1" "$#"
             RELEASE_TAG="$2"
+            RELEASE_TAG_GIVEN=true
             shift
             ;;
         --release-tag=*)
             RELEASE_TAG="${1#*=}"
+            RELEASE_TAG_GIVEN=true
             ;;
         -h|--help)
             usage
@@ -98,6 +99,20 @@ done
 if [ -z "$IMAGE_REPOSITORY" ]; then
     echo "Image repository must not be empty." >&2
     exit 1
+fi
+
+# A release tag is vVERSION or vVERSION-rcN; an empty one must not fall
+# back to the full branch build.
+if [ "$RELEASE_TAG_GIVEN" = true ]; then
+    release_tag_re='^v[0-9]+(\.[0-9]+)*(-rc[0-9]+)?$'
+    if ! [[ "$RELEASE_TAG" =~ $release_tag_re ]]; then
+        echo "Not a release tag: '$RELEASE_TAG' (such as v16.2-rc21 or v16.2)" >&2
+        exit 1
+    fi
+    if [ "${#SELECTED_VERSIONS[@]}" -gt 0 ]; then
+        echo "--release-tag builds the GCC version of its tag; drop --gcc-version" >&2
+        exit 1
+    fi
 fi
 
 # Define GCC versions and branches. Keep this compatible with macOS
@@ -122,8 +137,13 @@ TAG_LATEST=true
 if [ "${#SELECTED_VERSIONS[@]}" -gt 0 ]; then
     M68K_SPECS=()
     PPC_SPECS=()
+    SEEN=" "
     TAG_LATEST=false
     for VERSION in "${SELECTED_VERSIONS[@]}"; do
+        case "$SEEN" in
+            *" $VERSION "*) continue ;;
+        esac
+        SEEN="$SEEN$VERSION "
         FOUND=false
         for GCC_VERSION_SPEC in "${GCC_VERSION_SPECS[@]}"; do
             if [ "${GCC_VERSION_SPEC%%:*}" = "$VERSION" ]; then
@@ -201,67 +221,66 @@ if [ -f .extra ]; then
 fi
 
 # Build, tag and push one image. TARGET is m68k-amigaos or ppc-amigaos;
-# SUFFIX is appended to the version in the tags.
+# SUFFIX is appended to the version in the tags. With RELEASE_TAG, such as
+# v16.2-rc21, the image is built from that release and tagged with it
+# without its "v" (16.2-rc21) instead of gcc-vVERSION and the date.
 build_image() {
-    local target="$1" version="$2" branch="$3" suffix="$4"
-    local local_tag tag_version tag_version_date
+    local target="$1" version="$2" branch="$3" suffix="$4" release_tag="${5:-}"
+    local local_tag tag
+    local tags=()
+    local build_args=(
+        --build-arg "BUILD_TARGET=${target}"
+        --build-arg "BUILD_GCC_BRANCH=${branch}"
+        --build-arg "BUILD_GCC_VERSION=${version}"
+    )
 
     echo "========================================"
-    echo "Building ${target} GCC ${version} (branch: ${branch})"
+    if [ -n "$release_tag" ]; then
+        echo "Building ${target} GCC ${version} (release: ${release_tag})"
+        local_tag="${LOCAL_IMAGE_NAME}:${release_tag#v}"
+        tags+=("${IMAGE_REPOSITORY}:${release_tag#v}")
+        build_args+=(--build-arg "BUILD_RELEASE_TAG=${release_tag}")
+    else
+        echo "Building ${target} GCC ${version} (branch: ${branch})"
+        local_tag="${LOCAL_IMAGE_NAME}:gcc-v${version}${suffix}-${BUILD_DATE}${EXTRA}"
+        tags+=("${IMAGE_REPOSITORY}:gcc-v${version}${suffix}")
+        tags+=("${IMAGE_REPOSITORY}:gcc-v${version}${suffix}-${BUILD_DATE}${EXTRA}")
+    fi
     echo "========================================"
     echo
-
-    local_tag="${LOCAL_IMAGE_NAME}:gcc-v${version}${suffix}-${BUILD_DATE}${EXTRA}"
-    tag_version="${IMAGE_REPOSITORY}:gcc-v${version}${suffix}"
-    tag_version_date="${IMAGE_REPOSITORY}:gcc-v${version}${suffix}-${BUILD_DATE}${EXTRA}"
 
     ask_and_run "$DOCKER_CLI" build \
         --pull \
         --no-cache \
-        --build-arg "BUILD_TARGET=${target}" \
-        --build-arg "BUILD_GCC_BRANCH=${branch}" \
-        --build-arg "BUILD_GCC_VERSION=${version}" \
+        "${build_args[@]}" \
         -f Containerfile \
         -t "$local_tag" .
-    ask_and_run "$DOCKER_CLI" tag "$local_tag" "$tag_version"
-    ask_and_run "$DOCKER_CLI" tag "$local_tag" "$tag_version_date"
-    push_image "$tag_version"
-    push_image "$tag_version_date"
+    for tag in "${tags[@]}"; do
+        ask_and_run "$DOCKER_CLI" tag "$local_tag" "$tag"
+    done
+    for tag in "${tags[@]}"; do
+        push_image "$tag"
+    done
 
     echo
 }
 
-# Build, tag and push the image of one release tag, such as v16.2-rc21.
-# The GCC version is the tag without its "v" and its "-rcN" suffix.
-build_release_image() {
-    local tag="$1" version local_tag image_tag
-
-    version="${tag#v}"
-    version="${version%%-*}"
-
-    echo "========================================"
-    echo "Building m68k-amigaos release ${tag} (GCC ${version})"
-    echo "========================================"
-    echo
-
-    local_tag="${LOCAL_IMAGE_NAME}:${tag#v}"
-    image_tag="${IMAGE_REPOSITORY}:${tag#v}"
-
-    ask_and_run "$DOCKER_CLI" build \
-        --pull \
-        --no-cache \
-        --build-arg "BUILD_TARGET=m68k-amigaos" \
-        --build-arg "BUILD_GCC_BRANCH=${tag}" \
-        --build-arg "BUILD_GCC_VERSION=${version}" \
-        --build-arg "BUILD_RELEASE_TAG=${tag}" \
-        -f Containerfile \
-        -t "$local_tag" .
-    ask_and_run "$DOCKER_CLI" tag "$local_tag" "$image_tag"
-    push_image "$image_tag"
-}
-
-if [ -n "$RELEASE_TAG" ]; then
-    build_release_image "$RELEASE_TAG"
+# A release builds only its own m68k-amigaos image, from the version in its
+# tag; the branch only fills the gcc.branch label.
+if [ "$RELEASE_TAG_GIVEN" = true ]; then
+    RELEASE_VERSION="${RELEASE_TAG#v}"
+    RELEASE_VERSION="${RELEASE_VERSION%%-*}"
+    RELEASE_BRANCH=""
+    for GCC_VERSION_SPEC in "${GCC_VERSION_SPECS[@]}"; do
+        if [ "${GCC_VERSION_SPEC%%:*}" = "$RELEASE_VERSION" ]; then
+            RELEASE_BRANCH="${GCC_VERSION_SPEC#*:}"
+        fi
+    done
+    if [ -z "$RELEASE_BRANCH" ]; then
+        echo "No m68k-amigaos GCC ${RELEASE_VERSION} for release ${RELEASE_TAG}" >&2
+        exit 1
+    fi
+    build_image m68k-amigaos "$RELEASE_VERSION" "$RELEASE_BRANCH" "" "$RELEASE_TAG"
     echo "Script finished."
     exit 0
 fi

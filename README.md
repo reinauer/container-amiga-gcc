@@ -116,7 +116,11 @@ flag on those directories; it does not disable Gatekeeper.
 ./build.sh                       # 6.5.0b, 13.4 and 16.2 into /opt/amiga-vVERSION-YYYYMMDD
 ./build.sh --version 16.2 --prefix /opt/amiga-16.2
 ./build.sh --target ppc-amigaos  # 16.2 into /opt/amiga-ppc-v16.2-YYYYMMDD
+./build.sh --version 16.2 --release-tag v16.2-rc21  # a release, not the branch
 ```
+
+`--release-tag` builds a release of AmigaPorts/m68k-amigaos-gcc, v16.2-rc18
+or later, with every module at that release's tag instead of its branch.
 
 On Ubuntu the script installs missing packages with `apt-get` (`--skip-apt`
 to opt out). On macOS it installs its dependencies with Homebrew
@@ -140,6 +144,17 @@ script too. Use `--no-push` to only build and tag them locally:
 ./update_docker.sh --no-push --no-skip  # runs all steps without asking
 ```
 
+`--gcc-version VER` builds only the images of that GCC version, both targets;
+repeat it for more. `latest` moves only when its version is among them.
+`--release-tag TAG` builds just the m68k-amigaos image of a release, as
+`build.sh --release-tag` does, tagged with the release without its "v"; it
+leaves `latest` alone:
+
+```sh
+./update_docker.sh --no-push --gcc-version 16.2
+./update_docker.sh --no-push --release-tag v16.2-rc21  # amiga-gcc:16.2-rc21
+```
+
 Set `DOCKER_CLI=podman` to build with Podman instead of Docker.
 
 To build a single image by hand:
@@ -155,6 +170,9 @@ With Docker, name the `Containerfile` explicitly:
 docker build -f Containerfile --build-arg BUILD_GCC_VERSION=16.2 \
   --build-arg BUILD_GCC_BRANCH=amiga16.2 -t amiga-gcc:16.2 .
 ```
+
+For a release, add `--build-arg BUILD_RELEASE_TAG=v16.2-rc21`, with the
+matching `BUILD_GCC_VERSION`.
 
 For `ppc-amigaos`, add `--build-arg BUILD_TARGET=ppc-amigaos` and pass the
 AmigaPorts/gcc ref as `BUILD_GCC_BRANCH`:
@@ -183,8 +201,9 @@ image, for users of the old ppc-amigaos images. Tags that are already up to
 date are skipped. Use `--dry-run` to only list them and `--yes` to copy
 without asking.
 
-Without `--no-push`, `update_docker.sh` builds all versions locally and
-pushes them to Docker Hub directly, asking before each step.
+Without `--no-push`, `update_docker.sh` builds the images locally (all
+versions, or those that `--gcc-version` or `--release-tag` select) and pushes
+them to Docker Hub directly, asking before each step.
 
 Both scripts read the registry accounts from `registry.conf`. To publish from
 a fork, change the user and repository names there:
