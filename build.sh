@@ -16,6 +16,10 @@ TARGET="m68k-amigaos"
 REPO_URL="https://github.com/AmigaPorts/m68k-amigaos-gcc"
 GCC_REPO_URL="https://github.com/AmigaPorts/gcc"
 GENCRC_REPO_URL="https://github.com/mbtaylor1982/gencrc.git"
+# amitools with the AmiFUSE work, packaged as amitools-amifuse.
+AMITOOLS_REPO_URL="https://github.com/reinauer/amitools.git"
+AMITOOLS_REF="Drop_AccessStruct"
+AMITOOLS_DIST="amitools-amifuse"
 NDK_VERSION="3.2"
 PREFIX_ROOT="/opt"
 DATE_STAMP="${BUILD_DATE:-$(date +%Y%m%d)}"
@@ -704,8 +708,11 @@ install_amitools() {
   mkdir -p "${prefix}/libexec" "${prefix}/bin"
   python3 -m venv "$venv"
   "${venv}/bin/python" -m pip install -U pip
+  # A prefix built before the switch has upstream amitools and machine68k,
+  # which install the same modules as their amifuse packages.
+  "${venv}/bin/python" -m pip uninstall -y amitools machine68k
   "${venv}/bin/python" -m pip install -U \
-    "amitools[vamos] @ git+https://github.com/cnvogelg/amitools.git"
+    "${AMITOOLS_DIST}[vamos] @ git+${AMITOOLS_REPO_URL}@${AMITOOLS_REF}"
 
   while IFS= read -r tool; do
     [[ -n "$tool" ]] || continue
@@ -714,11 +721,12 @@ install_amitools() {
     ln -sfn "../libexec/amitools/bin/${tool}" "${prefix}/bin/${tool}"
   done < <(
     "${venv}/bin/python" -c '
+import sys
 from importlib.metadata import distribution
-for entry_point in distribution("amitools").entry_points:
+for entry_point in distribution(sys.argv[1]).entry_points:
     if entry_point.group == "console_scripts":
         print(entry_point.name)
-'
+' "$AMITOOLS_DIST"
   )
 
   prepend_unique_path "${venv}/bin"
