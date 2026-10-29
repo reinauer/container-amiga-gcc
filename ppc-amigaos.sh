@@ -9,7 +9,7 @@
 
 PPC_TARGET="ppc-amigaos"
 BINUTILS_REPO_URL="https://github.com/AmigaPorts/binutils-gdb"
-LHA_REPO_URL="https://github.com/jca02266/lha.git"
+LHA_REPO_URL="https://github.com/AmigaPorts/lha.git"
 # clib2 as pinned by adtools; clib4 2.5, the first with gcc 15+ fixes.
 CLIB2_REPO_URL="https://github.com/sodero/clib2.git"
 CLIB2_REF="1a42c693e03881f6f969c43ab36ce20d2569751d"
@@ -52,8 +52,9 @@ ppc_fetch_repo() {
 }
 
 # The SDK is an lha archive that lhasa cannot fully unpack, so build the
-# jca02266 lha port. It is installed into the prefix, as the m68k build
-# does with its own lha.
+# jca02266 lha port, from AmigaPorts' fork as the m68k build does: it
+# carries the generated autotools files, so it needs no autoreconf.  It is
+# installed into the prefix, as the m68k build does with its own lha.
 ppc_install_lha() {
   local prefix="$1"
   local src="${WORKDIR}/lha"
@@ -66,7 +67,6 @@ ppc_install_lha() {
   log "Building lha"
   (
     cd "$src"
-    autoreconf -fi
     ./configure --prefix="$prefix"
     "$MAKE_BIN" -j "$JOBS"
     "$MAKE_BIN" install
