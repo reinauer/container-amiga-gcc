@@ -12,6 +12,10 @@ on:
         required: false
         type: boolean
         default: true
+      release_tag:
+        description: Build GCC 16.2 from this AmigaPorts/m68k-amigaos-gcc release tag (such as v16.2-rc21) instead of the branches
+        required: false
+        type: string
   push:
     branches:
       - main
@@ -24,6 +28,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       build_date: ${{ steps.build-date.outputs.value }}
+      release_tag: ${{ steps.release-tag.outputs.value }}
 
     steps:
       - name: Resolve build date
@@ -37,6 +42,26 @@ jobs:
             exit 1
           fi
           echo "value=$build_date" >> "$GITHUB_OUTPUT"
+
+      # Check the tag here, before the builds start, rather than in each one.
+      - name: Resolve release tag
+        id: release-tag
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [[ -n "$RELEASE_TAG" ]]; then
+            if [[ ! "$RELEASE_TAG" =~ ^v16\.2-rc[0-9]+$ ]]; then
+              echo "Invalid release tag: $RELEASE_TAG (expected v16.2-rcN)" >&2
+              exit 1
+            fi
+            git ls-remote --exit-code --tags \
+              https://github.com/AmigaPorts/m68k-amigaos-gcc \
+              "refs/tags/$RELEASE_TAG" >/dev/null || {
+              echo "No release tag $RELEASE_TAG in AmigaPorts/m68k-amigaos-gcc" >&2
+              exit 1
+            }
+          fi
+          echo "value=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
   build:
     needs: metadata
@@ -74,11 +99,24 @@ jobs:
           BUILD_DATE: ${{ needs.metadata.outputs.build_date }}
           GCC_VERSION: ${{ matrix.toolchain.version }}
           NAME: ${{ matrix.toolchain.name }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.release_tag }}
           TARGET: ${{ matrix.toolchain.target }}
         run: |
+          # A release tag pins GCC 16.2: every m68k-amigaos module is checked
+          # out at its m68k-amigaos-gcc-TAG tag, and ppc-amigaos takes gcc
+          # and binutils from the same tags.  Other versions use the branches.
+          version_args=(--version "$GCC_VERSION")
+          if [[ -n "$RELEASE_TAG" && "$GCC_VERSION" == "16.2" ]]; then
+            if [[ "$TARGET" == "m68k-amigaos" ]]; then
+              version_args+=(--release-tag "$RELEASE_TAG")
+            else
+              ref="m68k-amigaos-gcc-$RELEASE_TAG"
+              version_args=(--version "$GCC_VERSION:$ref" --binutils-ref "$ref")
+            fi
+          fi
           ./build.sh \
             --target "$TARGET" \
-            --version "$GCC_VERSION" \
+            "${version_args[@]}" \
             --date "$BUILD_DATE" \
             --prefix-template "$NAME-{version}-{date}" \
             --workdir "$RUNNER_TEMP/$NAME-gcc-$GCC_VERSION"
@@ -188,8 +226,16 @@ jobs:
           BUILD_DATE: ${{ needs.metadata.outputs.build_date }}
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.release_tag }}
         run: |
           tag="v${BUILD_DATE:0:4}-${BUILD_DATE:4:2}-${BUILD_DATE:6:2}"
+          notes=()
+          # Name a release built from a release tag after it too, so that the
+          # name says what it holds and two on the same day don't collide.
+          if [[ -n "$RELEASE_TAG" ]]; then
+            tag="${tag}-${RELEASE_TAG#v}"
+            notes=(--notes "GCC 16.2 for m68k-amigaos and ppc-amigaos is built from [AmigaPorts/m68k-amigaos-gcc ${RELEASE_TAG}](https://github.com/AmigaPorts/m68k-amigaos-gcc/releases/tag/${RELEASE_TAG}); the other versions from their branches.")
+          fi
           archives=(dist/*.tar.xz)
           if [[ ! -e "${archives[0]}" ]]; then
             echo "No toolchain archives found" >&2
@@ -204,5 +250,6 @@ jobs:
             gh release create "$tag" "${archives[@]}" \
               --target "$GITHUB_SHA" \
               --title "$tag" \
+              "${notes[@]}" \
               --generate-notes
           fi
