@@ -16,6 +16,7 @@ on:
       - .github/workflows/toolchain-archives.yml
       - copy_to_dockerhub.sh
       - install_release.sh
+      - zprofile
 
 # A newer push supersedes the branch images still being built for an older
 # one.  A release image has a group of its own, so that pushes don't cancel
