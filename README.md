@@ -89,8 +89,10 @@ from with the build date, such as `v2026-10-28`, and another run on the same
 day replaces that release. Given a release tag of
 [AmigaPorts/m68k-amigaos-gcc](https://github.com/AmigaPorts/m68k-amigaos-gcc/tags),
 GCC 16.2 is built from that release instead of the branches, for
-m68k-amigaos and ppc-amigaos alike, and the release notes say so. A new
-upstream release needs no change here, just another run:
+m68k-amigaos and ppc-amigaos alike, and the release notes say so. The run
+also starts the image build of that release (see
+[Publishing images](#publishing-images)). A new upstream release needs no
+change here, just another run:
 
 ```sh
 gh workflow run toolchain-archives.yml -f release_tag=v16.2-rc22
@@ -218,7 +220,8 @@ podman build --build-arg BUILD_TARGET=ppc-amigaos \
 Every push to `main` that changes what goes into the images builds them and
 publishes them to GHCR; a newer push cancels the build still running for an
 older one. The image of a release of AmigaPorts/m68k-amigaos-gcc, such as
-`16.2-rc21`, is built by running the workflow with that release tag:
+`16.2-rc21`, is built by running the workflow with that release tag, which a
+release of the toolchain archives from that tag does too:
 
 ```sh
 gh workflow run publish.yml -f release_tag=v16.2-rc21
