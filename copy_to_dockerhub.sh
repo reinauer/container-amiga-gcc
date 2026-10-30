@@ -12,8 +12,9 @@ usage() {
 Usage: $0 [OPTIONS]
 
 Copy the newest build's tags (gcc-vVERSION, gcc-vVERSION-YYYYMMDD and
-latest) from GHCR to Docker Hub, and point the latest tag of the retired
-amigappc-gcc repository at the newest ppc-amigaos image.
+latest) and the release images (such as 16.2-rc21) from GHCR to Docker Hub,
+and point the latest tag of the retired amigappc-gcc repository at the
+newest ppc-amigaos image.
 
 Options:
   -n, --dry-run              Show what would be copied without copying
@@ -106,6 +107,11 @@ while IFS= read -r version; do
     tags+=("gcc-v$version" "gcc-v$version-$latest_date")
 done < <(sed -nE "s/^gcc-v(.+)-${latest_date}\$/\\1/p" <<<"$all_tags")
 tags+=("latest")
+# Release images, tagged with an AmigaPorts/m68k-amigaos-gcc release such as
+# 16.2-rc21, are copied whenever Docker Hub lacks them.
+while IFS= read -r tag; do
+    tags+=("$tag")
+done < <(grep -E '^[0-9]+(\.[0-9]+)*(-rc[0-9]+)?$' <<<"$all_tags" | sort -V)
 
 # Each copy is a source tag and the destination it goes to.
 copy_sources=()

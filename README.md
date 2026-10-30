@@ -232,12 +232,12 @@ docker login docker.io
 ```
 
 `copy_to_dockerhub.sh` finds the newest dated build on GHCR, lists its tags
-(`gcc-vVERSION`, `gcc-vVERSION-YYYYMMDD` and `latest`) and asks before
-copying them. It also points `latest` of the retired
-`stefanreinauer/amigappc-gcc` repository at the newest `gcc-vVERSION-ppc`
-image, for users of the old ppc-amigaos images. Tags that are already up to
-date are skipped. Use `--dry-run` to only list them and `--yes` to copy
-without asking.
+(`gcc-vVERSION`, `gcc-vVERSION-YYYYMMDD` and `latest`) and the release
+images (such as `16.2-rc21`), and asks before copying them. It also points
+`latest` of the retired `stefanreinauer/amigappc-gcc` repository at the
+newest `gcc-vVERSION-ppc` image, for users of the old ppc-amigaos images.
+Tags that are already up to date are skipped. Use `--dry-run` to only list
+them and `--yes` to copy without asking.
 
 Without `--no-push`, `update_docker.sh` builds the images locally (all
 versions, or those that `--gcc-version` or `--release-tag` select) and pushes
