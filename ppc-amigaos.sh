@@ -173,11 +173,19 @@ ppc_configure_gcc() {
   mkdir -p "$build"
   (
     cd "$build"
+    # Without the C library's headers at configure time GCC sets
+    # inhibit_libc, which reduces libgcov to stubs.  Point it at the SDK's
+    # newlib headers.  The port's specs find the headers of each runtime
+    # themselves, and its t-amigaos has a header directory of its own, which
+    # fixincludes would trip over.
     "${src}/configure" --target="$PPC_TARGET" --prefix="$prefix" \
       --enable-languages=c,c++ \
       --enable-threads=amigaos --enable-lto \
       --with-dwarf2 --disable-tls --disable-libstdcxx-pch \
       --disable-c++tools --disable-nls --disable-bootstrap \
+      --with-build-sysroot="${prefix}/${PPC_TARGET}/SDK" \
+      --with-native-system-header-dir=/newlib/include \
+      --disable-fixincludes \
       "${PPC_HOST_FLAGS[@]}" \
       CFLAGS_FOR_TARGET=-O2 CXXFLAGS_FOR_TARGET=-O2 \
       "${PPC_DEP_ARGS[@]}"
