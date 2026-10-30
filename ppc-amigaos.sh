@@ -237,11 +237,47 @@ ppc_verify_prefix() (
 
   tmpdir=$(mktemp -d)
   trap 'rm -rf "$tmpdir"' EXIT
+
+  # Each C runtime has to link C, and C++ with exceptions and threads.
+  cat > "${tmpdir}/hello.c" <<'EOF'
+#include <stdio.h>
+
+int main(void)
+{
+    printf("Hello from ppc-amigaos-gcc\n");
+    return 0;
+}
+EOF
+  cat > "${tmpdir}/hello.cc" <<'EOF'
+#include <iostream>
+#include <mutex>
+#include <stdexcept>
+#include <thread>
+
+static std::mutex mtx;
+
+int main()
+{
+    try {
+        throw std::runtime_error("exception");
+    } catch (const std::exception &e) {
+        std::cout << "caught " << e.what() << std::endl;
+    }
+
+    std::thread t([] {
+        std::lock_guard<std::mutex> lock(mtx);
+        std::cout << "Hello from a ppc-amigaos-g++ thread" << std::endl;
+    });
+    t.join();
+    return 0;
+}
+EOF
+
   for crt in newlib clib2 clib4; do
     "${prefix}/bin/${PPC_TARGET}-gcc" -O2 -mcrt="$crt" \
-      "${SCRIPT_DIR}/test/hello.c" -o "${tmpdir}/hello-${crt}"
+      "${tmpdir}/hello.c" -o "${tmpdir}/hello-${crt}"
     "${prefix}/bin/${PPC_TARGET}-g++" -O2 -mcrt="$crt" -athread=native \
-      "${SCRIPT_DIR}/test/hello.cc" -o "${tmpdir}/hello-cc-${crt}"
+      "${tmpdir}/hello.cc" -o "${tmpdir}/hello-cc-${crt}"
     [[ -s "${tmpdir}/hello-${crt}" && -s "${tmpdir}/hello-cc-${crt}" ]] \
       || die "${crt} did not produce executables"
     printf '  %-7s ok\n' "$crt"

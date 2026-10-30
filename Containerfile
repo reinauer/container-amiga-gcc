@@ -24,7 +24,6 @@ ARG BUILD_TARGET=m68k-amigaos
 ENV DEBIAN_FRONTEND=noninteractive
 
 COPY build.sh ppc-amigaos.sh install_flexcat.sh /root/container-amiga-gcc/
-COPY test /root/container-amiga-gcc/test
 
 # Build the requested toolchain through the same native entry point used on
 # Linux and macOS. Runtime tools such as Vamos and gencrc are installed into
