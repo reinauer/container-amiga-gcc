@@ -174,7 +174,8 @@ for i in "${!names[@]}"; do
             amiga-ppc-*) target="ppc-amigaos" ;;
             *) target="m68k-amigaos" ;;
         esac
-        [[ -x "$stage/$prefix/bin/$target-gcc" ]] \
+        # The staging directory is only accessible to root under sudo.
+        as_root test -x "$stage/$prefix/bin/$target-gcc" \
             || die "${url##*/} has no $prefix/bin/$target-gcc"
 
         if [[ -d "$ROOT/$prefix" ]]; then
