@@ -62,6 +62,7 @@ location.
 | `gcc-v16.2`, `latest`    | GCC 16.2                       |
 | `gcc-v16.2-ppc`          | GCC 16.2 for `ppc-amigaos`     |
 | `gcc-vVERSION-YYYYMMDD`  | A specific dated build         |
+| `16.2-rcN`, `16.2`       | GCC 16.2 from that release of [AmigaPorts/m68k-amigaos-gcc](https://github.com/AmigaPorts/m68k-amigaos-gcc/tags) |
 
 The toolchain is installed in `/opt/amiga` (`/opt/amiga-ppc` for
 `ppc-amigaos`) and is on `PATH`:
@@ -214,8 +215,16 @@ podman build --build-arg BUILD_TARGET=ppc-amigaos \
 
 ## Publishing images
 
-Every push to `main` builds the images and publishes them to GHCR. Docker
-Hub is updated from there, without rebuilding:
+Every push to `main` that changes what goes into the images builds them and
+publishes them to GHCR; a newer push cancels the build still running for an
+older one. The image of a release of AmigaPorts/m68k-amigaos-gcc, such as
+`16.2-rc21`, is built by running the workflow with that release tag:
+
+```sh
+gh workflow run publish.yml -f release_tag=v16.2-rc21
+```
+
+Docker Hub is updated from GHCR, without rebuilding:
 
 ```sh
 docker login docker.io
