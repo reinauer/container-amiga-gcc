@@ -26,6 +26,9 @@ permissions:
 jobs:
   metadata:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
     outputs:
       build_date: ${{ steps.build-date.outputs.value }}
       release_tag: ${{ steps.release-tag.outputs.value }}
@@ -62,6 +65,18 @@ jobs:
             }
           fi
           echo "value=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+      # A release from a release tag also gets the container image of that
+      # release, such as 16.2-rc21, built alongside the archives.
+      - name: Start the release image build
+        if: inputs.release_tag != '' && inputs.release
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release-tag.outputs.value }}
+        run: |
+          gh workflow run publish.yml --ref "$GITHUB_REF_NAME" \
+            -f release_tag="$RELEASE_TAG"
 
   build:
     needs: metadata
