@@ -131,6 +131,11 @@ export PATH=/opt/amiga-16.2/bin:$PATH
 
 Several versions and dates can be installed side by side.
 
+`zprofile` is an example for zsh: add it to `~/.zprofile` to get `amiga6`,
+`amiga13` and `amiga16`, which switch the shell between the installed
+m68k-amigaos toolchains, with GCC 16.2 as the default and `ppc-amigaos` always
+on `PATH`.
+
 On macOS, browser downloads may carry a quarantine flag that triggers an
 "Apple could not verify" warning for every executable. If you trust the
 downloaded toolchain, remove the flag after extraction:
