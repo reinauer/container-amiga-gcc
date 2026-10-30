@@ -823,19 +823,6 @@ prepare_source() {
     log "Reusing source tree ${src}"
     warn_if_reused_checkout_stale "$src" "amiga-gcc"
   fi
-
-  (
-    cd "$src"
-    perl -pi -e "s#\\S+/gcc#${GCC_REPO_URL}#g" default-repos
-
-    # Savannah's direct download server intermittently fails TLS connections
-    # on hosted runners. Use FreeType's official SourceForge mirror, retaining
-    # the version selected by upstream and its download retry handling.
-    perl -pi -e '
-      s{https://download-mirror\.savannah\.gnu\.org/releases/freetype/}
-       {https://downloads.sourceforge.net/project/freetype/freetype2/\$(patsubst freetype-%,%,\$(LIBFREETYPE))/}g;
-    ' Makefile
-  )
 }
 
 prepare_gencrc() {
@@ -923,45 +910,7 @@ reset_variant_build_dir() {
   printf 'prefix=%s\n' "$prefix" > "$stamp"
 }
 
-patch_libdebug_ordering() {
-  local src="$1"
-  local makefile="${src}/Makefile"
-  local deps_line
 
-  [[ -f "$makefile" ]] || return 0
-
-  deps_line='$(BUILD)/libdebug/Makefile: $(BUILD)/gcc/_libgcc_done $(BUILD)/libnix/_done $(PROJECTS)/libdebug/configure $(shell find 2>/dev/null $(PROJECTS)/libdebug -not \( -path $(PROJECTS)/libdebug/.git -prune \) -type f)'
-
-  if ! grep -q 'CODEX_LIBDEBUG_AFTER_LIBGCC' "$makefile"; then
-    perl -0pi -e 's@(# libdebug\n)@$1# CODEX_LIBDEBUG_AFTER_LIBGCC\n@' "$makefile"
-  fi
-
-  if ! grep -Fq '$(BUILD)/libdebug/Makefile: $(BUILD)/gcc/_libgcc_done' "$makefile"; then
-    LIBDEBUG_DEPS_LINE="$deps_line" \
-      perl -0pi -e 's@^\$\(BUILD\)/libdebug/Makefile:.*$@$ENV{LIBDEBUG_DEPS_LINE}@m' "$makefile"
-  fi
-
-  grep -Fq '$(BUILD)/libdebug/Makefile: $(BUILD)/gcc/_libgcc_done' "$makefile" \
-    || die "failed to make libdebug wait for libgcc in ${makefile}"
-}
-
-patch_newlib_binutils_ordering() {
-  local src="$1"
-  local makefile="${src}/Makefile"
-  local deps_line
-
-  [[ -f "$makefile" ]] || return 0
-
-  deps_line='$(BUILD)/newlib/newlib/libc.a: $(BUILD)/newlib/newlib/Makefile $(BUILD)/binutils/_gdb $(NEWLIB_FILES)'
-
-  if ! grep -Fq '$(BUILD)/newlib/newlib/libc.a: $(BUILD)/newlib/newlib/Makefile $(BUILD)/binutils/_gdb' "$makefile"; then
-    NEWLIB_DEPS_LINE="$deps_line" \
-      perl -0pi -e 's@^\$\(BUILD\)/newlib/newlib/libc\.a:.*$@$ENV{NEWLIB_DEPS_LINE}@m' "$makefile"
-  fi
-
-  grep -Fq '$(BUILD)/newlib/newlib/libc.a: $(BUILD)/newlib/newlib/Makefile $(BUILD)/binutils/_gdb' "$makefile" \
-    || die "failed to make newlib wait for binutils gdb in ${makefile}"
-}
 
 apply_patch_file() {
   local dir="$1"
@@ -1081,8 +1030,6 @@ build_gcc_version() {
     make_amiga "$src" branch branch="$branch" mod=gcc
   fi
   make_amiga "$src" update NDK="$ndk" PREFIX="$prefix"
-  patch_libdebug_ordering "$src"
-  patch_newlib_binutils_ordering "$src"
   reset_variant_build_dir "$src" "$prefix"
   verify_amiga_lto "$src"
   make_amiga_parallel "$src" all NDK="$ndk" PREFIX="$prefix"
@@ -1100,7 +1047,7 @@ build_gcc_version() {
   make_amiga_parallel "$src" all-sdk NDK="$ndk" PREFIX="$prefix"
   "${SCRIPT_DIR}/install_flexcat.sh" "$prefix"
 
-  download_and_fix_includes "$src" "$prefix"
+  download_and_fix_includes "$prefix"
   build_vlink_and_vbcc "$src" "$prefix" "$ndk"
   install_working_vbcc "$prefix"
   install_vbcc_wrapper "$prefix"
@@ -1109,13 +1056,17 @@ build_gcc_version() {
 }
 
 download_and_fix_includes() {
-  local src="$1"
-  local prefix="$2"
+  local prefix="$1"
   local devices_dir="${prefix}/m68k-amigaos/ndk-include/devices"
+  local dir="${WORKDIR}/devices-includes"
 
   log "Downloading and fixing additional include files for ${prefix}"
+  # Not in the m68k-amigaos-gcc checkout, which .manifest would then call
+  # dirty.
+  rm -rf "$dir"
+  mkdir -p "$dir"
   (
-    cd "$src"
+    cd "$dir"
     curl -LfsS -o newstyle.h https://raw.githubusercontent.com/aros-development-team/AROS/master/compiler/include/devices/newstyle.h
     curl -LfsS -o sana2.h https://raw.githubusercontent.com/aros-development-team/AROS/master/compiler/include/devices/sana2.h
     curl -LfsS -o sana2specialstats.h https://raw.githubusercontent.com/aros-development-team/AROS/master/compiler/include/devices/sana2specialstats.h
@@ -1128,6 +1079,7 @@ download_and_fix_includes() {
     mkdir -p "$devices_dir"
     mv -f newstyle.h sana2.h sana2specialstats.h "$devices_dir/"
   )
+  rm -rf "$dir"
 }
 
 build_vlink_and_vbcc() {
