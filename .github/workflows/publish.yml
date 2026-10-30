@@ -2,9 +2,27 @@ name: Publish compiler images to GHCR
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Build only the m68k-amigaos image of this AmigaPorts/m68k-amigaos-gcc release tag (such as v16.2-rc21), tagged 16.2-rc21, instead of the branch images
+        required: false
+        type: string
   push:
     branches:
       - main
+    # Changes that don't go into the images don't rebuild them.
+    paths-ignore:
+      - "**.md"
+      - .github/workflows/toolchain-archives.yml
+      - copy_to_dockerhub.sh
+      - install_release.sh
+
+# A newer push supersedes the branch images still being built for an older
+# one.  A release image has a group of its own, so that pushes don't cancel
+# it.
+concurrency:
+  group: publish-${{ inputs.release_tag || 'branches' }}
+  cancel-in-progress: true
 
 env:
   REGISTRY: ghcr.io
@@ -25,9 +43,29 @@ jobs:
 
       - name: Resolve image repository
         id: image
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           echo "repository=${REGISTRY}/${GITHUB_REPOSITORY,,}" \
             >> "$GITHUB_OUTPUT"
+
+          # A release image is tagged with the release without its "v", the
+          # branch images are attested through latest.
+          if [[ -n "$RELEASE_TAG" ]]; then
+            if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+(\.[0-9]+)*(-rc[0-9]+)?$ ]]; then
+              echo "Invalid release tag: $RELEASE_TAG (expected such as v16.2-rc21)" >&2
+              exit 1
+            fi
+            git ls-remote --exit-code --tags \
+              https://github.com/AmigaPorts/m68k-amigaos-gcc \
+              "refs/tags/$RELEASE_TAG" >/dev/null || {
+              echo "No release tag $RELEASE_TAG in AmigaPorts/m68k-amigaos-gcc" >&2
+              exit 1
+            }
+            echo "tag=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
@@ -37,9 +75,15 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and publish compiler images
+        env:
+          IMAGE_REPOSITORY: ${{ steps.image.outputs.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
-          ./update_docker.sh --no-skip \
-            --repository "${{ steps.image.outputs.repository }}"
+          args=(--no-skip --repository "$IMAGE_REPOSITORY")
+          if [[ -n "$RELEASE_TAG" ]]; then
+            args+=(--release-tag "$RELEASE_TAG")
+          fi
+          ./update_docker.sh "${args[@]}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -48,10 +92,11 @@ jobs:
         id: digest
         env:
           IMAGE_REPOSITORY: ${{ steps.image.outputs.repository }}
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
           digest="$(
             docker buildx imagetools inspect \
-              "${IMAGE_REPOSITORY}:latest" \
+              "${IMAGE_REPOSITORY}:${IMAGE_TAG}" \
               --format '{{.Manifest.Digest}}'
           )"
           if [[ ! "$digest" =~ ^sha256:[[:xdigit:]]{64}$ ]]; then
