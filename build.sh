@@ -910,8 +910,6 @@ reset_variant_build_dir() {
   printf 'prefix=%s\n' "$prefix" > "$stamp"
 }
 
-
-
 apply_patch_file() {
   local dir="$1"
   local patch_file="$2"
@@ -1047,39 +1045,11 @@ build_gcc_version() {
   make_amiga_parallel "$src" all-sdk NDK="$ndk" PREFIX="$prefix"
   "${SCRIPT_DIR}/install_flexcat.sh" "$prefix"
 
-  download_and_fix_includes "$prefix"
   build_vlink_and_vbcc "$src" "$prefix" "$ndk"
   install_working_vbcc "$prefix"
   install_vbcc_wrapper "$prefix"
   install_gencrc "$prefix"
   verify_prefix "$prefix"
-}
-
-download_and_fix_includes() {
-  local prefix="$1"
-  local devices_dir="${prefix}/m68k-amigaos/ndk-include/devices"
-  local dir="${WORKDIR}/devices-includes"
-
-  log "Downloading and fixing additional include files for ${prefix}"
-  # Not in the m68k-amigaos-gcc checkout, which .manifest would then call
-  # dirty.
-  rm -rf "$dir"
-  mkdir -p "$dir"
-  (
-    cd "$dir"
-    curl -LfsS -o newstyle.h https://raw.githubusercontent.com/aros-development-team/AROS/master/compiler/include/devices/newstyle.h
-    curl -LfsS -o sana2.h https://raw.githubusercontent.com/aros-development-team/AROS/master/compiler/include/devices/sana2.h
-    curl -LfsS -o sana2specialstats.h https://raw.githubusercontent.com/aros-development-team/AROS/master/compiler/include/devices/sana2specialstats.h
-    curl -LfsS -o newstyle.diff https://dl.amigadev.com/newstyle.diff
-    if "$PATCH_BIN" --version 2>/dev/null | grep -qi 'GNU patch'; then
-      "$PATCH_BIN" --ignore-whitespace < newstyle.diff
-    else
-      "$PATCH_BIN" -l < newstyle.diff
-    fi
-    mkdir -p "$devices_dir"
-    mv -f newstyle.h sana2.h sana2specialstats.h "$devices_dir/"
-  )
-  rm -rf "$dir"
 }
 
 build_vlink_and_vbcc() {
