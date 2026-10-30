@@ -105,7 +105,21 @@ opt/amiga-16.2 -> amiga-16.2-20260825
 `ppc-amigaos` archives are named `amiga-ppc-gcc-…` and install
 `opt/amiga-ppc-16.2-…` and `opt/amiga-ppc-16.2`.
 
-Extract it at the root of the file system so that it lands in `/opt`:
+`install_release.sh` installs the latest release for the host it runs on:
+it downloads the Linux or macOS archives, unpacks their dated
+installations into `/opt`, points the `/opt/amiga-16.2` and other symlinks
+at them and, on macOS, clears the quarantine flag. It runs `sudo` itself
+when it needs to. Installations that already exist are not downloaded
+again:
+
+```sh
+./install_release.sh                    # every toolchain of the latest release
+./install_release.sh -o amiga-16.2      # only m68k-amigaos GCC 16.2
+./install_release.sh -t v2026-10-29 -n  # what an older release would install
+```
+
+To install an archive by hand, extract it at the root of the file system so
+that it lands in `/opt`:
 
 ```sh
 sudo tar -xJf amiga-gcc-16.2-20260825-linux-x86_64.tar.xz -C /
