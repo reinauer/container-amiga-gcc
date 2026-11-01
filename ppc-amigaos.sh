@@ -15,6 +15,12 @@ CLIB2_REPO_URL="https://github.com/sodero/clib2.git"
 CLIB2_REF="1a42c693e03881f6f969c43ab36ce20d2569751d"
 CLIB4_REPO_URL="https://github.com/AmigaLabs/clib4.git"
 CLIB4_REF="c640af22a7eea76260ac6ab631fb01ca96870576"
+VASM_REPO_URL="https://github.com/AmigaPorts/vasm.git"
+VLINK_REPO_URL="https://github.com/AmigaPorts/vlink.git"
+# The vbcc release in m68k-amigaos-gcc's default-repos.
+VBCC_REPO_URL="https://github.com/AmigaPorts/vbcc.git"
+VBCC_REF="vbcc-20260112"
+VBCC_TARGET_URL="http://phoenix.owl.de/vbcc/2022-05-22/vbcc_target_ppc-amigaos.lha"
 
 # AmigaPorts/gcc ref for a ppc-amigaos GCC version.
 ppc_gcc_ref_for_version() {
@@ -76,6 +82,96 @@ ppc_install_lha() {
     "$MAKE_BIN" -j "$JOBS"
     "$MAKE_BIN" install
   )
+}
+
+# PowerPC vasm.  The m68k-amigaos prefix gets it too: xSysInfo's copy of
+# identify.library has PowerPC code, and looks for vasmppc_std on PATH.
+ppc_install_vasm() {
+  local prefix="$1"
+  local src="${WORKDIR}/vasm-ppc"
+
+  ppc_fetch_repo "$VASM_REPO_URL" master "$src"
+  log "Building vasmppc_std"
+  "$MAKE_BIN" -C "$src" -j "$JOBS" CPU=ppc SYNTAX=std
+  install -m 755 "${src}/vasmppc_std" "${prefix}/bin/"
+}
+
+ppc_install_vlink() {
+  local prefix="$1"
+  local src="${WORKDIR}/vlink"
+
+  ppc_fetch_repo "$VLINK_REPO_URL" master "$src"
+  log "Building vlink"
+  "$MAKE_BIN" -C "$src" -j "$JOBS"
+  install -m 755 "${src}/vlink" "${prefix}/bin/"
+}
+
+# vbcc asks about the host's types when it is built.  These are the same
+# answers the m68k-amigaos build gives, as both targets are big-endian.
+ppc_vbcc_host_types() {
+  printf '%s\n' \
+    y y "signed char" y "unsigned char" \
+    n y "signed short" n y "unsigned short" \
+    n y "signed int" n y "unsigned int" \
+    n y "signed long long" n y "unsigned long long" \
+    n y float n y double
+}
+
+ppc_install_vbcc() {
+  local prefix="$1"
+  local src="${WORKDIR}/vbcc"
+  local tmp="${WORKDIR}/vbcc-target"
+  local vbcc="${prefix}/${PPC_TARGET}/vbcc"
+  local sdk="${prefix}/${PPC_TARGET}/SDK"
+  local targets="${vbcc}/targets/${PPC_TARGET}"
+
+  ppc_fetch_repo "$VBCC_REPO_URL" "$VBCC_REF" "$src"
+  log "Building vbcc for ${PPC_TARGET}"
+  (
+    cd "$src"
+    mkdir -p bin objects/ppc
+    TARGET=ppc "$MAKE_BIN" -j "$JOBS" bin/dtgen
+    ppc_vbcc_host_types |
+      bin/dtgen machines/ppc/machine.dt objects/ppc/dt.h objects/ppc/dt.c
+    TARGET=ppc "$MAKE_BIN" -j "$JOBS"
+    mkdir -p "${prefix}/libexec/vbcc"
+    install -m 755 bin/vbccppc bin/vscppc bin/vprof "${prefix}/bin/"
+    install -m 755 bin/vc "${prefix}/libexec/vbcc/"
+  )
+
+  log "Installing the vbcc ${PPC_TARGET} target"
+  safe_remove_source "$tmp"
+  mkdir -p "$tmp"
+  curl -LfsS -o "${tmp}/target.lha" "$VBCC_TARGET_URL"
+  (
+    cd "$tmp"
+    "${prefix}/bin/lha" xqf target.lha
+  )
+  rm -rf "$targets"
+  mkdir -p "${vbcc}/targets" "${vbcc}/config"
+  mv "${tmp}/vbcc_target_${PPC_TARGET}/targets/${PPC_TARGET}" "$targets"
+
+  # The target's config is written for AmigaOS: its assigns become paths here.
+  sed -e "s|-Ivincludeos4:|-I${targets}/include -I${sdk}/include/include_h|g" \
+      -e "s|vlibos4:script|${targets}/lib/script|g" \
+      -e "s|vlibos4:startup.o|${targets}/lib/startup.o|g" \
+      -e "s|-Lvlibos4:|-L${targets}/lib|g" \
+      -e "s| -LSObjs:||g" \
+      -e "s|=delete quiet |=rm -f |" \
+      -e "s|=delete |=rm -f |" \
+      "${tmp}/vbcc_target_${PPC_TARGET}/config/aosppc" > "${vbcc}/config/aosppc"
+  cp "${vbcc}/config/aosppc" "${vbcc}/config/vc.config"
+  safe_remove_source "$tmp"
+
+  cat > "${prefix}/bin/vc" <<'EOF'
+#!/bin/sh
+# container-amiga-gcc vc wrapper
+prefix=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P) || exit 1
+export VBCC="$prefix/ppc-amigaos/vbcc"
+export PATH="$prefix/bin:$PATH"
+exec "$prefix/libexec/vbcc/vc" "$@"
+EOF
+  chmod 755 "${prefix}/bin/vc"
 }
 
 # configure arguments for GMP, MPFR and MPC, which macOS keeps in Homebrew.
@@ -290,6 +386,22 @@ EOF
       || die "${crt} did not produce executables"
     printf '  %-7s ok\n' "$crt"
   done
+
+  cat > "${tmpdir}/hello-vbcc.c" <<'EOF'
+#include <stdio.h>
+#include <exec/types.h>
+
+int main(void)
+{
+    printf("Hello from vbcc\n");
+    return 0;
+}
+EOF
+  "${prefix}/bin/vc" -O2 "${tmpdir}/hello-vbcc.c" -o "${tmpdir}/hello-vbcc"
+  [[ "$(head -c 4 "${tmpdir}/hello-vbcc" | od -An -c | tr -d ' ')" == '177ELF' ]] \
+    || die "vbcc did not produce an ELF executable"
+  printf '  %-7s ok\n' vbcc
+  "${prefix}/bin/vasmppc_std" -v 2>&1 | head -n 1
 )
 
 build_ppc_version() {
@@ -339,6 +451,10 @@ build_ppc_version() {
     log "Building and installing GCC ${version} into ${prefix}"
     "$MAKE_BIN" -C "$gcc_build" -j "$JOBS"
     "$MAKE_BIN" -C "$gcc_build" install
+
+    ppc_install_vasm "$prefix"
+    ppc_install_vlink "$prefix"
+    ppc_install_vbcc "$prefix"
   )
 
   ppc_verify_prefix "$prefix"

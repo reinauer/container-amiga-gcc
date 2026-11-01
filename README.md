@@ -29,7 +29,7 @@ binutils 2.46 from the
 Each `m68k-amigaos` installation is a self-contained prefix with:
 
 - GCC (C and C++) and binutils for `m68k-amigaos`, with HUNK LTO support
-- GDB, vasm, vlink and vbcc
+- GDB, vasm (for 68k, and `vasmppc_std` for PowerPC), vlink and vbcc
 - libnix, ixemul, clib2, libpthread, libdebug and the AmigaOS NDK (3.2 by
   default)
 - zlib, libpng and FreeType built for every multilib
@@ -44,6 +44,7 @@ Each `ppc-amigaos` installation has:
 - the AmigaOS 4 SDK (54.16 by default), downloaded from Hyperion, with its
   newlib runtime
 - clib2 and clib4, built with the new compiler
+- vbcc for `ppc-amigaos` (`vc`), with `vasmppc_std` and vlink
 - lha
 
 ## Getting the toolchain

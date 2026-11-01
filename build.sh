@@ -1048,6 +1048,7 @@ build_gcc_version() {
   build_vlink_and_vbcc "$src" "$prefix" "$ndk"
   install_working_vbcc "$prefix"
   install_vbcc_wrapper "$prefix"
+  ppc_install_vasm "$prefix"
   install_gencrc "$prefix"
   verify_prefix "$prefix"
 }
@@ -1155,6 +1156,7 @@ verify_prefix() {
 
   [[ -d "${prefix}/m68k-amigaos/vbcc/targets" ]] || die "missing VBCC targets in ${prefix}"
   verify_vbcc "$prefix"
+  [[ -x "${prefix}/bin/vasmppc_std" ]] || die "missing vasmppc_std in ${prefix}"
   [[ -f "${prefix}/m68k-amigaos/include/png.h" ]] || die "missing png.h in ${prefix}"
   [[ -x "${prefix}/bin/gencrc" ]] || die "missing gencrc in ${prefix}"
   if [[ "$INSTALL_AMITOOLS" -eq 1 ]]; then
