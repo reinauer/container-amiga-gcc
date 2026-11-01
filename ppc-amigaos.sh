@@ -13,7 +13,7 @@ LHA_REPO_URL="https://github.com/AmigaPorts/lha.git"
 # clib2 from AmigaPorts, as the m68k build uses; clib4 2.5, the first with
 # gcc 15+ fixes.
 CLIB2_REPO_URL="https://github.com/AmigaPorts/clib2.git"
-CLIB2_REF="c86beef0d96bfb3260674d994bd76636a31a7aad"
+CLIB2_REF="master"
 CLIB4_REPO_URL="https://github.com/AmigaLabs/clib4.git"
 CLIB4_REF="c640af22a7eea76260ac6ab631fb01ca96870576"
 VASM_REPO_URL="https://github.com/AmigaPorts/vasm.git"
