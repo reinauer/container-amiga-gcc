@@ -10,9 +10,10 @@
 PPC_TARGET="ppc-amigaos"
 BINUTILS_REPO_URL="https://github.com/AmigaPorts/binutils-gdb"
 LHA_REPO_URL="https://github.com/AmigaPorts/lha.git"
-# clib2 as pinned by adtools; clib4 2.5, the first with gcc 15+ fixes.
-CLIB2_REPO_URL="https://github.com/sodero/clib2.git"
-CLIB2_REF="1a42c693e03881f6f969c43ab36ce20d2569751d"
+# clib2 from AmigaPorts, as the m68k build uses; clib4 2.5, the first with
+# gcc 15+ fixes.
+CLIB2_REPO_URL="https://github.com/AmigaPorts/clib2.git"
+CLIB2_REF="c86beef0d96bfb3260674d994bd76636a31a7aad"
 CLIB4_REPO_URL="https://github.com/AmigaLabs/clib4.git"
 CLIB4_REF="c640af22a7eea76260ac6ab631fb01ca96870576"
 VASM_REPO_URL="https://github.com/AmigaPorts/vasm.git"
@@ -296,9 +297,8 @@ ppc_build_clib2() {
 
   ppc_fetch_repo "$CLIB2_REPO_URL" "$CLIB2_REF" "$src"
   log "Building clib2"
-  # clib2 predates C99's stricter rules, which gcc 14 and later enforce.
   "$MAKE_BIN" -C "${src}/library" -f GNUmakefile.os4 -j "$JOBS" \
-    CC="${xgcc} -Wno-error=int-conversion -Wno-error=incompatible-pointer-types -Wno-error=implicit-function-declaration" \
+    CC="$xgcc" \
     AR="${prefix}/bin/${PPC_TARGET}-ar -q" \
     RANLIB="${prefix}/bin/${PPC_TARGET}-ranlib"
   rm -rf "${sdk}/clib2"

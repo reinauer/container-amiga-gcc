@@ -43,7 +43,7 @@ Each `ppc-amigaos` installation has:
 - GCC (C and C++) and binutils for `ppc-amigaos`
 - the AmigaOS 4 SDK (54.16 by default), downloaded from Hyperion, with its
   newlib runtime
-- clib2 and clib4, built with the new compiler
+- clib2 from AmigaPorts and clib4, built with the new compiler
 - vbcc for `ppc-amigaos` (`vc`), with `vasmppc_std` and vlink
 - lha
 
