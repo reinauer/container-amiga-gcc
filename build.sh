@@ -35,6 +35,11 @@ INSTALL_AMITOOLS=1
 REUSE_SOURCE=0
 RELEASE_TAG=""
 RELEASE_TAG_GIVEN=0
+# m68k-amigaos gcc thread model from --threads; empty leaves the Makefile's
+# default (no).  THREADS is what the GCC version being built gets, which make
+# is given: the Makefile has thread models only for gcc 16.2 and later.
+THREADS_OPTION=""
+THREADS=""
 DEFAULT_SYMLINK_VERSION=""
 PREFIX_OVERRIDE=""
 HOST_CC="${CC:-}"
@@ -155,6 +160,13 @@ Options:
                              v16.2-rc21) of the main repository, with every
                              module at its m68k-amigaos-gcc-TAG tag instead of
                              its branch; needs exactly one --version
+  --threads MODEL            m68k-amigaos: gcc thread model, no, amigaos or
+                             posix (default: the Makefile's, no), for GCC 16.2
+                             and later; older versions build with no.
+                             amigaos and posix give C++ std::thread,
+                             std::mutex and per-thread thread_local: amigaos
+                             in libgcc, posix through libpthread, which
+                             clib2 programs can't use
   --cc PATH_OR_NAME          Host C compiler (default: gcc; newest gcc-NN on macOS)
   --cxx PATH_OR_NAME         Host C++ compiler (default: g++; newest g++-NN on macOS)
 ${package_option}
@@ -262,6 +274,11 @@ parse_args() {
         RELEASE_TAG_GIVEN=1
         shift 2
         ;;
+      --threads)
+        [[ $# -ge 2 ]] || die "--threads requires a value"
+        THREADS_OPTION="$2"
+        shift 2
+        ;;
       --prefix-root)
         [[ $# -ge 2 ]] || die "--prefix-root requires a value"
         PREFIX_ROOT="${2%/}"
@@ -366,6 +383,14 @@ parse_args() {
     die "--prefix requires exactly one --version"
   fi
 
+  case "$THREADS_OPTION" in
+    "") ;;
+    no | amigaos | posix)
+      [[ "$TARGET" == "m68k-amigaos" ]] || die "--threads is for m68k-amigaos only"
+      ;;
+    *) die "unknown thread model '${THREADS_OPTION}'; use no, amigaos or posix" ;;
+  esac
+
   if [[ "$RELEASE_TAG_GIVEN" -eq 1 ]]; then
     local release_tag_re='^v[0-9]+(\.[0-9]+)*(-rc[0-9]+)?$' tag_version
     [[ "$RELEASE_TAG" =~ $release_tag_re ]] ||
@@ -388,6 +413,24 @@ prefix_for_version() {
   prefix_name="${prefix_name//\{version\}/$version}"
   prefix_name="${prefix_name//\{date\}/$DATE_STAMP}"
   printf '%s/%s\n' "$PREFIX_ROOT" "$prefix_name"
+}
+
+# The thread model make gets for a GCC version: --threads from 16.2 on.
+# Both thread models need gcc's <benaphore.h>, which older versions don't
+# have, so the Makefile builds them only with THREADS=no.
+threads_for_version() {
+  local version="$1"
+
+  case "$THREADS_OPTION" in
+    amigaos | posix)
+      if (( ${version%%.*} >= 16 )); then
+        printf '%s\n' "$THREADS_OPTION"
+      else
+        printf 'no\n'
+      fi
+      ;;
+    *) printf '%s\n' "$THREADS_OPTION" ;;
+  esac
 }
 
 version_from_spec() {
@@ -894,7 +937,12 @@ reset_variant_build_dir() {
 
   [[ "$REUSE_SOURCE" -eq 1 ]] || return 0
 
+  # A build with another thread model can't be reused: gcc's configure
+  # doesn't rerun when THREADS changes.
   stamp_text="$(printf 'prefix=%s' "$prefix")"
+  if [[ -n "$THREADS" && "$THREADS" != no ]]; then
+    stamp_text+=$'\n'"threads=${THREADS}"
+  fi
   if [[ -f "$stamp" && "$(cat "$stamp")" == "$stamp_text" ]]; then
     return
   fi
@@ -907,7 +955,7 @@ reset_variant_build_dir() {
   fi
 
   mkdir -p "$build"
-  printf 'prefix=%s\n' "$prefix" > "$stamp"
+  printf '%s\n' "$stamp_text" > "$stamp"
 }
 
 apply_patch_file() {
@@ -977,13 +1025,15 @@ verify_default_libstubs_archive() {
     || die "installed libstubs archive does not expose _DOSBase"
 }
 
+# THREADS goes to every make, so that no step rebuilds gcc with another
+# thread model.
 make_amiga() {
   local src="$1"
   shift
 
   (
     cd "$src"
-    "$MAKE_BIN" "$@" SHELL="$MAKE_SHELL"
+    "$MAKE_BIN" "$@" ${THREADS:+THREADS="$THREADS"} SHELL="$MAKE_SHELL"
   )
 }
 
@@ -993,7 +1043,7 @@ make_amiga_parallel() {
 
   (
     cd "$src"
-    "$MAKE_BIN" -j "$JOBS" "$@" SHELL="$MAKE_SHELL"
+    "$MAKE_BIN" -j "$JOBS" "$@" ${THREADS:+THREADS="$THREADS"} SHELL="$MAKE_SHELL"
   )
 }
 
@@ -1014,7 +1064,11 @@ build_gcc_version() {
   fi
   src="${WORKDIR}/amiga-gcc-${version}"
 
-  log "Building GCC ${version} (${RELEASE_TAG:+release ${RELEASE_TAG}, not branch }${branch}) with NDK ${ndk}"
+  THREADS="$(threads_for_version "$version")"
+  log "Building GCC ${version} (${RELEASE_TAG:+release ${RELEASE_TAG}, not branch }${branch}) with NDK ${ndk}${THREADS:+, THREADS=${THREADS}}"
+  if [[ -n "$THREADS_OPTION" && "$THREADS" != "$THREADS_OPTION" ]]; then
+    log "GCC ${version} has no thread models before 16.2: building it with THREADS=no"
+  fi
   ensure_prefix_writable "$prefix"
   install_amitools "$prefix"
   prepare_source "$version" "$src"
@@ -1087,6 +1141,43 @@ verify_vbcc() (
   done
 )
 
+# With a thread model, C++ threads link without -lpthread, for nix20 and
+# newlib.  Not with clib2 for posix: libpthread is built against libnix, and
+# its pthread.h stops a clib2 build.
+verify_threads() (
+  local prefix="$1"
+  local tmpdir crt
+
+  "${prefix}/bin/m68k-amigaos-g++" -v 2>&1 | grep -q "^Thread model: ${THREADS}\$" \
+    || die "${prefix} was not built with the ${THREADS} thread model"
+
+  tmpdir=$(mktemp -d)
+  trap 'rm -rf "$tmpdir"' EXIT
+  cat > "${tmpdir}/threads.cc" <<'EOF'
+#include <mutex>
+#include <thread>
+
+static std::mutex mtx;
+static thread_local int count;
+
+int main()
+{
+    std::thread t([] {
+        std::lock_guard<std::mutex> lock(mtx);
+        ++count;
+    });
+    t.join();
+    return count;
+}
+EOF
+  for crt in nix20 newlib; do
+    "${prefix}/bin/m68k-amigaos-g++" -O2 -mcrt="$crt" \
+      "${tmpdir}/threads.cc" -o "${tmpdir}/threads-${crt}" \
+      || die "std::thread does not link with -mcrt=${crt}"
+    printf '  threads %-7s ok\n' "$crt"
+  done
+)
+
 verify_prefix() {
   local prefix="$1"
 
@@ -1102,6 +1193,9 @@ verify_prefix() {
   [[ -x "${prefix}/bin/vasmppc_std" ]] || die "missing vasmppc_std in ${prefix}"
   [[ -f "${prefix}/m68k-amigaos/include/png.h" ]] || die "missing png.h in ${prefix}"
   [[ -x "${prefix}/bin/gencrc" ]] || die "missing gencrc in ${prefix}"
+  if [[ "$THREADS" == amigaos || "$THREADS" == posix ]]; then
+    verify_threads "$prefix"
+  fi
   if [[ "$INSTALL_AMITOOLS" -eq 1 ]]; then
     [[ -x "${prefix}/bin/vamos" ]] || die "missing Vamos in ${prefix}"
     "${prefix}/bin/vamos" --help >/dev/null
