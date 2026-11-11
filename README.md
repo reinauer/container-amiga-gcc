@@ -283,18 +283,19 @@ vamos hello
 
 ### vbcc
 
-`bin/vc` is a wrapper that points `VBCC` at the installation's own
-`m68k-amigaos/vbcc` directory, so no environment setup is needed and a `VBCC`
-variable set for another toolchain is ignored.
+vbcc is the one the m68k-amigaos-gcc toolchain builds and installs. `vc`
+finds its configs next to itself in `bin`, so no environment setup is needed.
+A `VBCC` variable set for another vbcc installation takes precedence: unset
+it to use this one.
 
 ```sh
 vc hello.c -o hello            # default config
 vc +aos68k hello.c -o hello    # select a target config
 ```
 
-The available configs are `aos68k`, `aos68km`, `aos68kr` and `kick13`. They
-live in `m68k-amigaos/vbcc/config`, and explicit config paths and
-current-directory overrides work as usual.
+The available configs are `aos68k`, `aos68km`, `aos68kr` and `kick13`.
+`aos68km` and `aos68kr` link vbcc's minimal startup code, which opens no
+libraries: programs built with them open `dos.library` themselves.
 
 ### AmigaOS 4 C runtimes
 
