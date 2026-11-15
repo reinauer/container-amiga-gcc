@@ -21,7 +21,10 @@ VLINK_REPO_URL="https://github.com/AmigaPorts/vlink.git"
 # The vbcc release in m68k-amigaos-gcc's default-repos.
 VBCC_REPO_URL="https://github.com/AmigaPorts/vbcc.git"
 VBCC_REF="vbcc-20260112"
-VBCC_TARGET_URL="http://phoenix.owl.de/vbcc/2022-05-22/vbcc_target_ppc-amigaos.lha"
+# phoenix.owl.de no longer serves vbcc, and Aminet has only the older 0.9g
+# target; the Wayback Machine keeps the 2022-05-22 one byte for byte.
+VBCC_TARGET_URL="https://web.archive.org/web/20250214102524id_/http://phoenix.owl.de/vbcc/2022-05-22/vbcc_target_ppc-amigaos.lha"
+VBCC_TARGET_SHA256="8d7eeae3fb1e7c1111bf32a6130c68b6dd7d81eaf7a5b1bd652946e7ff741b4e"
 
 # AmigaPorts/gcc ref for a ppc-amigaos GCC version.
 ppc_gcc_ref_for_version() {
@@ -118,6 +121,16 @@ ppc_vbcc_host_types() {
     n y float n y double
 }
 
+ppc_check_sha256() {
+  local file="$1" want="$2" got
+  if command -v sha256sum >/dev/null 2>&1; then
+    got=$(sha256sum "$file" | cut -d' ' -f1)
+  else
+    got=$(shasum -a 256 "$file" | cut -d' ' -f1)
+  fi
+  [ "$got" = "$want" ] || die "${file}: sha256 ${got}, expected ${want}"
+}
+
 ppc_install_vbcc() {
   local prefix="$1"
   local src="${WORKDIR}/vbcc"
@@ -143,7 +156,8 @@ ppc_install_vbcc() {
   log "Installing the vbcc ${PPC_TARGET} target"
   safe_remove_source "$tmp"
   mkdir -p "$tmp"
-  curl -LfsS -o "${tmp}/target.lha" "$VBCC_TARGET_URL"
+  curl -LfsS --retry 3 -o "${tmp}/target.lha" "$VBCC_TARGET_URL"
+  ppc_check_sha256 "${tmp}/target.lha" "$VBCC_TARGET_SHA256"
   (
     cd "$tmp"
     "${prefix}/bin/lha" xqf target.lha
