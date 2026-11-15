@@ -21,10 +21,6 @@ VLINK_REPO_URL="https://github.com/AmigaPorts/vlink.git"
 # The vbcc release in m68k-amigaos-gcc's default-repos.
 VBCC_REPO_URL="https://github.com/AmigaPorts/vbcc.git"
 VBCC_REF="vbcc-20260112"
-# phoenix.owl.de no longer serves vbcc, and Aminet has only the older 0.9g
-# target; the Wayback Machine keeps the 2022-05-22 one byte for byte.
-VBCC_TARGET_URL="https://web.archive.org/web/20250214102524id_/http://phoenix.owl.de/vbcc/2022-05-22/vbcc_target_ppc-amigaos.lha"
-VBCC_TARGET_SHA256="8d7eeae3fb1e7c1111bf32a6130c68b6dd7d81eaf7a5b1bd652946e7ff741b4e"
 
 # AmigaPorts/gcc ref for a ppc-amigaos GCC version.
 ppc_gcc_ref_for_version() {
@@ -121,25 +117,14 @@ ppc_vbcc_host_types() {
     n y float n y double
 }
 
-ppc_check_sha256() {
-  local file="$1" want="$2" got
-  if command -v sha256sum >/dev/null 2>&1; then
-    got=$(sha256sum "$file" | cut -d' ' -f1)
-  else
-    got=$(shasum -a 256 "$file" | cut -d' ' -f1)
-  fi
-  [ "$got" = "$want" ] || die "${file}: sha256 ${got}, expected ${want}"
-}
-
 ppc_install_vbcc() {
   local prefix="$1"
   local src="${WORKDIR}/vbcc"
-  local tmp="${WORKDIR}/vbcc-target"
-  local vbcc="${prefix}/${PPC_TARGET}/vbcc"
-  local sdk="${prefix}/${PPC_TARGET}/SDK"
-  local targets="${vbcc}/targets/${PPC_TARGET}"
+  local target="${src}/targets/${PPC_TARGET}"
 
   ppc_fetch_repo "$VBCC_REPO_URL" "$VBCC_REF" "$src"
+  [[ -f "${target}/Makefile" ]] ||
+    die "${VBCC_REPO_URL} ${VBCC_REF} has no targets/${PPC_TARGET}"
   log "Building vbcc for ${PPC_TARGET}"
   (
     cd "$src"
@@ -148,45 +133,18 @@ ppc_install_vbcc() {
     ppc_vbcc_host_types |
       bin/dtgen machines/ppc/machine.dt objects/ppc/dt.h objects/ppc/dt.c
     TARGET=ppc "$MAKE_BIN" -j "$JOBS"
-    mkdir -p "${prefix}/libexec/vbcc"
-    install -m 755 bin/vbccppc bin/vscppc bin/vprof "${prefix}/bin/"
-    install -m 755 bin/vc "${prefix}/libexec/vbcc/"
+    install -m 755 bin/vbccppc bin/vscppc bin/vprof bin/vc "${prefix}/bin/"
   )
 
-  log "Installing the vbcc ${PPC_TARGET} target"
-  safe_remove_source "$tmp"
-  mkdir -p "$tmp"
-  curl -LfsS --retry 3 -o "${tmp}/target.lha" "$VBCC_TARGET_URL"
-  ppc_check_sha256 "${tmp}/target.lha" "$VBCC_TARGET_SHA256"
-  (
-    cd "$tmp"
-    "${prefix}/bin/lha" xqf target.lha
-  )
-  rm -rf "$targets"
-  mkdir -p "${vbcc}/targets" "${vbcc}/config"
-  mv "${tmp}/vbcc_target_${PPC_TARGET}/targets/${PPC_TARGET}" "$targets"
-
-  # The target's config is written for AmigaOS: its assigns become paths here.
-  sed -e "s|-Ivincludeos4:|-I${targets}/include -I${sdk}/include/include_h|g" \
-      -e "s|vlibos4:script|${targets}/lib/script|g" \
-      -e "s|vlibos4:startup.o|${targets}/lib/startup.o|g" \
-      -e "s|-Lvlibos4:|-L${targets}/lib|g" \
-      -e "s| -LSObjs:||g" \
-      -e "s|=delete quiet |=rm -f |" \
-      -e "s|=delete |=rm -f |" \
-      "${tmp}/vbcc_target_${PPC_TARGET}/config/aosppc" > "${vbcc}/config/aosppc"
-  cp "${vbcc}/config/aosppc" "${vbcc}/config/vc.config"
-  safe_remove_source "$tmp"
-
-  cat > "${prefix}/bin/vc" <<'EOF'
-#!/bin/sh
-# container-amiga-gcc vc wrapper
-prefix=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P) || exit 1
-export VBCC="$prefix/ppc-amigaos/vbcc"
-export PATH="$prefix/bin:$PATH"
-exec "$prefix/libexec/vbcc/vc" "$@"
-EOF
-  chmod 755 "${prefix}/bin/vc"
+  # The target's startup code and libraries, built by that vbccppc with
+  # the vasm, vlink and binutils installed before; its install puts the
+  # config beside vc.
+  log "Building the vbcc ${PPC_TARGET} target"
+  rm -rf "${prefix}/${PPC_TARGET}/vbcc"
+  PATH="${prefix}/bin:$PATH" "$MAKE_BIN" -C "$target" -j "$JOBS" \
+    O="${WORKDIR}/vbcc-target" \
+    SDK_INCLUDE="${prefix}/${PPC_TARGET}/SDK/include/include_h" \
+    PREFIX="$prefix" install
 }
 
 # configure arguments for GMP, MPFR and MPC, which macOS keeps in Homebrew.
