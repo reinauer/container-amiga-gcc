@@ -308,6 +308,19 @@ ppc-amigaos-gcc -O2 hello.c -o hello
 ppc-amigaos-g++ -O2 -mcrt=clib4 -athread=native hello.cc -o hello
 ```
 
+`-mcpu=8548` generates SPE code for the A1222, whose e500v2 has no
+classic floating point unit. Use it with `-mcrt=clib2` (or `clib2-ts`),
+which has libraries built for SPE:
+
+```sh
+ppc-amigaos-gcc -O2 -mcpu=8548 -mcrt=clib2 prog.c -o prog -lm
+```
+
+newlib and clib4 are classic builds in the SDK. An SPE program linked
+with them has to keep floating point values out of its calls into the C
+library, such as `printf("%f")` or `sin()`: SPE passes them in other
+registers. SPE programs don't run on other AmigaOS 4 machines.
+
 ## History
 
 This repository started as a fork of
