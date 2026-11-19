@@ -261,11 +261,22 @@ ppc_configure_gcc() {
   )
 }
 
+# clib2's libraries for SPE (-mcpu=8548, the A1222), which gcc's specs take
+# from a subdirectory spe of clib2's library directories: its classic ones
+# use floating point registers, which SPE code doesn't pass doubles in and
+# the A1222's e500v2 doesn't have.  The large data ones only, as the
+# soft-float variant of clib2's makefile; small-data and baserel SPE
+# programs don't link.
+PPC_CLIB2_SPE_TARGETS=(crt0.o crtbegin.o crtend.o
+  libc.a libunix.a libm.a libnet.a libdebug.a libamiga.a libprofile.a)
+
 ppc_build_clib2() {
   local xgcc="$1"
   local prefix="$2"
   local src="${WORKDIR}/clib2"
+  local spe_src="${WORKDIR}/clib2-spe"
   local sdk="${prefix}/${PPC_TARGET}/SDK"
+  local dir targets=() f
 
   ppc_fetch_repo "$CLIB2_REPO_URL" "$CLIB2_REF" "$src"
   log "Building clib2"
@@ -273,10 +284,33 @@ ppc_build_clib2() {
     CC="$xgcc" \
     AR="${prefix}/bin/${PPC_TARGET}-ar -q" \
     RANLIB="${prefix}/bin/${PPC_TARGET}-ranlib"
+
+  # The same source again, in a tree of its own, as the makefile has no
+  # variant for it.
+  log "Building clib2 for SPE"
+  safe_remove_source "$spe_src"
+  git clone -q "$src" "$spe_src"
+  for dir in lib lib.threadsafe; do
+    for f in "${PPC_CLIB2_SPE_TARGETS[@]}"; do
+      targets+=("${dir}/${f}")
+    done
+  done
+  "$MAKE_BIN" -C "${spe_src}/library" -f GNUmakefile.os4 -j "$JOBS" \
+    CC="$xgcc -mcpu=8548" \
+    AR="${prefix}/bin/${PPC_TARGET}-ar -q" \
+    RANLIB="${prefix}/bin/${PPC_TARGET}-ranlib" \
+    "${targets[@]}"
+
   rm -rf "${sdk}/clib2"
   mkdir -p "${sdk}/clib2"
   cp -Rp "${src}/library/include" "${src}/library/lib" \
     "${src}/library/lib.threadsafe" "${sdk}/clib2/"
+  for dir in lib lib.threadsafe; do
+    mkdir -p "${sdk}/clib2/${dir}/spe"
+    for f in "${PPC_CLIB2_SPE_TARGETS[@]}"; do
+      cp -p "${spe_src}/library/${dir}/${f}" "${sdk}/clib2/${dir}/spe/"
+    done
+  done
   cp "${src}/LICENSE" "${sdk}/clib2/"
 }
 
@@ -299,6 +333,64 @@ ppc_build_clib4() {
   mkdir -p "${sdk}/clib4/include" "${sdk}/clib4/lib"
   "$MAKE_BIN" -C "$src" -f GNUmakefile.os4 install INSTALL_PREFIX="${sdk}/clib4"
   cp "${src}"/LICENSE* "${sdk}/clib4/"
+}
+
+# An SPE program (-mcpu=8548) with clib2 has to link, and contain no
+# classic floating point instruction: those trap on the A1222's e500v2, and
+# a classic C library reads doubles from registers SPE code doesn't pass
+# them in.  Classic floating point instructions are those of primary opcodes
+# 48 to 55 (loads and stores) and 59 and 63 (arithmetic), which objdump
+# shows as .long in SPE mode, so the scan decodes the opcode itself.
+ppc_verify_spe() {
+  local prefix="$1"
+  local tmpdir="$2"
+  local crt exe scan fpu insns
+
+  cat > "${tmpdir}/spe.c" <<'EOF'
+#include <fenv.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main(int argc, char **argv)
+{
+    double x = strtod(argc > 1 ? argv[1] : "0.5", 0);
+
+    fesetround(FE_TOWARDZERO);
+    printf("sin(%g) = %f, rounding %d\n", x, sin(x), fegetround());
+    return 0;
+}
+EOF
+  for crt in clib2 clib2-ts; do
+    exe="${tmpdir}/spe-${crt}"
+    "${prefix}/bin/${PPC_TARGET}-gcc" -O2 -mcpu=8548 -mcrt="$crt" \
+      "${tmpdir}/spe.c" -o "$exe" -lm \
+      || die "an SPE program does not link with -mcrt=${crt}"
+    # The number of classic floating point instructions and of all
+    # instructions, which shows that objdump disassembled anything.
+    scan="$("${prefix}/bin/${PPC_TARGET}-objdump" -d -M e500 "$exe" | awk '
+      BEGIN { hex = "0123456789abcdef" }
+      /^ *[0-9a-f]+:\t/ {
+        split($0, f, "\t")
+        w = f[2]
+        gsub(/ /, "", w)
+        if (length(w) != 8)
+          next
+        byte = (index(hex, substr(w, 1, 1)) - 1) * 16
+        byte += index(hex, substr(w, 2, 1)) - 1
+        op = int(byte / 4)
+        if ((op >= 48 && op <= 55) || op == 59 || op == 63)
+          n++
+        t++
+      }
+      END { print n + 0, t + 0 }')"
+    read -r fpu insns <<<"$scan"
+    [[ "$insns" -gt 0 ]] \
+      || die "could not disassemble the SPE program for ${crt}"
+    [[ "$fpu" -eq 0 ]] \
+      || die "the SPE program for ${crt} has ${fpu} classic floating point instructions"
+    printf '  %-7s ok\n' "spe ${crt}"
+  done
 }
 
 # Compile and link C and C++ programs against each C runtime.
@@ -359,6 +451,8 @@ EOF
       || die "${crt} did not produce executables"
     printf '  %-7s ok\n' "$crt"
   done
+
+  ppc_verify_spe "$prefix" "$tmpdir"
 
   cat > "${tmpdir}/hello-vbcc.c" <<'EOF'
 #include <stdio.h>
