@@ -275,7 +275,8 @@ ppc_build_clib2() {
     RANLIB="${prefix}/bin/${PPC_TARGET}-ranlib"
   rm -rf "${sdk}/clib2"
   mkdir -p "${sdk}/clib2"
-  cp -Rp "${src}/library/include" "${src}/library/lib" "${sdk}/clib2/"
+  cp -Rp "${src}/library/include" "${src}/library/lib" \
+    "${src}/library/lib.threadsafe" "${sdk}/clib2/"
   cp "${src}/LICENSE" "${sdk}/clib2/"
 }
 
