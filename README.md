@@ -43,7 +43,8 @@ Each `ppc-amigaos` installation has:
 - GCC (C and C++) and binutils for `ppc-amigaos`
 - the AmigaOS 4 SDK (54.16 by default), downloaded from Hyperion, with its
   newlib runtime
-- clib2 from AmigaPorts and clib4, built with the new compiler
+- clib2 from AmigaPorts and clib4 (from AmigaPorts' fork), built with the
+  new compiler, also for SPE (the A1222)
 - vbcc for `ppc-amigaos` (`vc`), with `vasmppc_std` and vlink
 - lha
 
@@ -309,17 +310,23 @@ ppc-amigaos-g++ -O2 -mcrt=clib4 -athread=native hello.cc -o hello
 ```
 
 `-mcpu=8548` generates SPE code for the A1222, whose e500v2 has no
-classic floating point unit. Use it with `-mcrt=clib2` (or `clib2-ts`),
-which has libraries built for SPE:
+classic floating point unit. Use it with `-mcrt=clib2` (or `clib2-ts`)
+or `-mcrt=clib4`, which have libraries built for SPE:
 
 ```sh
 ppc-amigaos-gcc -O2 -mcpu=8548 -mcrt=clib2 prog.c -o prog -lm
+ppc-amigaos-gcc -O2 -mcpu=8548 -mcrt=clib4 prog.c -o prog -lm
 ```
 
-newlib and clib4 are classic builds in the SDK. An SPE program linked
-with them has to keep floating point values out of its calls into the C
-library, such as `printf("%f")` or `sin()`: SPE passes them in other
-registers. SPE programs don't run on other AmigaOS 4 machines.
+clib4 is a shared library, so an SPE program needs its SPE build of
+`clib4.library` at run time: `ppc-amigaos/SDK/clib4/spe/clib4.library`.
+It runs classic clib4 programs too, so on the A1222 it replaces the
+classic `ppc-amigaos/SDK/clib4/clib4.library` in `LIBS:`.
+
+newlib is a classic build in the SDK. An SPE program linked with it has
+to keep floating point values out of its calls into the C library, such
+as `printf("%f")` or `sin()`: SPE passes them in other registers. SPE
+programs don't run on other AmigaOS 4 machines.
 
 ## History
 

@@ -10,12 +10,14 @@
 PPC_TARGET="ppc-amigaos"
 BINUTILS_REPO_URL="https://github.com/AmigaPorts/binutils-gdb"
 LHA_REPO_URL="https://github.com/AmigaPorts/lha.git"
-# clib2 from AmigaPorts, as the m68k build uses; clib4 2.5, the first with
-# gcc 15+ fixes.
+# clib2 from AmigaPorts, as the m68k build uses.  clib4 from AmigaPorts'
+# fork (branch spe-gcc16): AmigaLabs' development branch, whose SPE
+# clib4.library runs classic programs too, with the SPE build for gcc 16
+# and its fix in AmigaLabs/clib4#511.
 CLIB2_REPO_URL="https://github.com/AmigaPorts/clib2.git"
 CLIB2_REF="master"
-CLIB4_REPO_URL="https://github.com/AmigaLabs/clib4.git"
-CLIB4_REF="c640af22a7eea76260ac6ab631fb01ca96870576"
+CLIB4_REPO_URL="https://github.com/AmigaPorts/clib4.git"
+CLIB4_REF="b310ffe8c5ae6ad090bdeb2799549bade609d6ea"
 VASM_REPO_URL="https://github.com/AmigaPorts/vasm.git"
 VLINK_REPO_URL="https://github.com/AmigaPorts/vlink.git"
 # The vbcc release in m68k-amigaos-gcc's default-repos.
@@ -314,29 +316,88 @@ ppc_build_clib2() {
   cp "${src}/LICENSE" "${sdk}/clib2/"
 }
 
+# clib4's SPE build (-mcpu=8548, the A1222) is a clib4.library with two
+# interfaces: "spe", which its SPE startup code opens, and "main", for
+# classic programs, so that it replaces the classic library on the A1222.
+# It goes in a subdirectory spe of the SDK's clib4 directory, and gcc's
+# specs take its libraries from a subdirectory spe of clib4's library
+# directories, as clib2's.
+PPC_CLIB4_SPE_BASEREL_LINKS=(crt0.o crtend.o libamiga.a libauto.a libc.a
+  libcrypt.a libdebug.a libm.a libprofile.a libpthread.a librt.a)
+
 ppc_build_clib4() {
   local xgcc="$1"
   local prefix="$2"
   local src="${WORKDIR}/clib4"
+  local spe_src="${WORKDIR}/clib4-spe"
   local sdk="${prefix}/${PPC_TARGET}/SDK"
+  local spe="${sdk}/clib4/lib/spe"
+  local f
+  local make_args=(
+    CC="$xgcc"
+    AR="${prefix}/bin/${PPC_TARGET}-ar -q"
+    RANLIB="${prefix}/bin/${PPC_TARGET}-ranlib"
+    STRIP="${prefix}/bin/${PPC_TARGET}-strip"
+    SDK_INCLUDE="${sdk}/include"
+  )
 
   ppc_fetch_repo "$CLIB4_REPO_URL" "$CLIB4_REF" "$src"
   log "Building clib4"
-  "$MAKE_BIN" -C "$src" -f GNUmakefile.os4 -j "$JOBS" \
-    CC="$xgcc" \
-    AR="${prefix}/bin/${PPC_TARGET}-ar -q" \
-    RANLIB="${prefix}/bin/${PPC_TARGET}-ranlib" \
-    STRIP="${prefix}/bin/${PPC_TARGET}-strip" \
-    INSTALL_PREFIX="${sdk}/clib4" \
-    SDK_INCLUDE="${sdk}/include"
+  "$MAKE_BIN" -C "$src" -f GNUmakefile.os4 -j "$JOBS" "${make_args[@]}" \
+    INSTALL_PREFIX="${sdk}/clib4"
+
+  # The same source again, in a tree of its own: the build edits files of
+  # the tree, and its install replaces the whole SDK directory.  The SPE
+  # build copies files to INSTALL_PREFIX as it goes, so that is a scratch
+  # directory.  Everything but clib4.library, which links with libgcc, for
+  # SPE's soft-float helpers: ppc_link_clib4_spe links it once gcc is built.
+  log "Building clib4 for SPE"
+  safe_remove_source "$spe_src"
+  git clone -q "$src" "$spe_src"
+  "$MAKE_BIN" -C "$spe_src" -f GNUmakefile.os4 -j "$JOBS" "${make_args[@]}" \
+    SPE=yes INSTALL_PREFIX="${spe_src}/install" \
+    gitver prepare all-targets all-libs
+
   rm -rf "${sdk}/clib4"
   mkdir -p "${sdk}/clib4/include" "${sdk}/clib4/lib"
   "$MAKE_BIN" -C "$src" -f GNUmakefile.os4 install INSTALL_PREFIX="${sdk}/clib4"
   cp "${src}"/LICENSE* "${sdk}/clib4/"
+
+  mkdir -p "${spe}" "${sdk}/clib4/lib/baserel/spe"
+  cp -p "${spe_src}"/build/lib/soft-float/*.[ao] \
+    "${spe_src}"/build/lib/soft-float/*.so "${spe}/"
+  ln -s ../libauto.a "${spe}/libauto.a"
+  # -mbaserel takes lib/baserel/spe: the baserel startup code, and the
+  # same libraries as large data, as clib4's install does for lib/baserel.
+  cp -p "${spe_src}/build/lib/soft-float/baserel/crtbegin.o" \
+    "${sdk}/clib4/lib/baserel/spe/"
+  for f in "${PPC_CLIB4_SPE_BASEREL_LINKS[@]}"; do
+    ln -s "../../spe/${f}" "${sdk}/clib4/lib/baserel/spe/${f}"
+  done
 }
 
-# An SPE program (-mcpu=8548) with clib2 has to link, and contain no
-# classic floating point instruction: those trap on the A1222's e500v2, and
+# The SPE clib4.library, with the installed compiler and its libgcc.  It
+# goes in a subdirectory spe of the SDK's clib4 directory.
+ppc_link_clib4_spe() {
+  local prefix="$1"
+  local spe_src="${WORKDIR}/clib4-spe"
+  local sdk="${prefix}/${PPC_TARGET}/SDK"
+
+  log "Linking clib4.library for SPE"
+  "$MAKE_BIN" -C "$spe_src" -f GNUmakefile.os4 -j "$JOBS" \
+    CC="${prefix}/bin/${PPC_TARGET}-gcc" \
+    AR="${prefix}/bin/${PPC_TARGET}-ar -q" \
+    RANLIB="${prefix}/bin/${PPC_TARGET}-ranlib" \
+    STRIP="${prefix}/bin/${PPC_TARGET}-strip" \
+    SDK_INCLUDE="${sdk}/include" \
+    SPE=yes INSTALL_PREFIX="${spe_src}/install" \
+    clib4.library
+  mkdir -p "${sdk}/clib4/spe"
+  cp -p "${spe_src}"/build/clib4.library* "${sdk}/clib4/spe/"
+}
+
+# An SPE program (-mcpu=8548) with clib2 or clib4 has to link, and contain
+# no classic floating point instruction: those trap on the A1222's e500v2, and
 # a classic C library reads doubles from registers SPE code doesn't pass
 # them in.  Classic floating point instructions are those of primary opcodes
 # 48 to 55 (loads and stores) and 59 and 63 (arithmetic), which objdump
@@ -361,7 +422,7 @@ int main(int argc, char **argv)
     return 0;
 }
 EOF
-  for crt in clib2 clib2-ts; do
+  for crt in clib2 clib2-ts clib4; do
     exe="${tmpdir}/spe-${crt}"
     "${prefix}/bin/${PPC_TARGET}-gcc" -O2 -mcpu=8548 -mcrt="$crt" \
       "${tmpdir}/spe.c" -o "$exe" -lm \
@@ -518,6 +579,7 @@ build_ppc_version() {
     log "Building and installing GCC ${version} into ${prefix}"
     "$MAKE_BIN" -C "$gcc_build" -j "$JOBS"
     "$MAKE_BIN" -C "$gcc_build" install
+    ppc_link_clib4_spe "$prefix"
 
     ppc_install_vasm "$prefix"
     ppc_install_vlink "$prefix"
