@@ -14,9 +14,11 @@ Supported GCC versions:
 
 | Version  | amiga-gcc branch |
 |----------|------------------|
-| `6.5.0b` | `amiga6`         |
 | `13.4`   | `amiga13.4`      |
 | `16.2`   | `amiga16.2`      |
+
+GCC 6.5.0b (`amiga6`) is no longer built or published. The existing
+`gcc-v6.5.0b` images stay available.
 
 `ppc-amigaos` GCC 16.2 is built from the same
 [AmigaPorts gcc](https://github.com/AmigaPorts/gcc) branch, `amiga16.2`, and
@@ -59,7 +61,6 @@ location.
 
 | Tag                      | Contents                       |
 |--------------------------|--------------------------------|
-| `gcc-v6.5.0b`            | GCC 6.5.0b                     |
 | `gcc-v13.4`              | GCC 13.4                       |
 | `gcc-v16.2`, `latest`    | GCC 16.2                       |
 | `gcc-v16.2-ppc`          | GCC 16.2 for `ppc-amigaos`     |
@@ -133,8 +134,8 @@ export PATH=/opt/amiga-16.2/bin:$PATH
 
 Several versions and dates can be installed side by side.
 
-`zprofile` is an example for zsh: add it to `~/.zprofile` to get `amiga6`,
-`amiga13` and `amiga16`, which switch the shell between the installed
+`zprofile` is an example for zsh: add it to `~/.zprofile` to get `amiga13`
+and `amiga16`, which switch the shell between the installed
 m68k-amigaos toolchains, with GCC 16.2 as the default and `ppc-amigaos` always
 on `PATH`.
 
@@ -152,7 +153,7 @@ flag on those directories; it does not disable Gatekeeper.
 ### Building from source
 
 ```sh
-./build.sh                       # 6.5.0b, 13.4 and 16.2 into /opt/amiga-vVERSION-YYYYMMDD
+./build.sh                       # 13.4 and 16.2 into /opt/amiga-vVERSION-YYYYMMDD
 ./build.sh --version 16.2 --prefix /opt/amiga-16.2
 ./build.sh --target ppc-amigaos  # 16.2 into /opt/amiga-ppc-v16.2-YYYYMMDD
 ./build.sh --version 16.2 --release-tag v16.2-rc21  # a release, not the branch
