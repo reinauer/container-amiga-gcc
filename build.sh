@@ -119,7 +119,7 @@ steps as Containerfile.
 
 Defaults:
   target:         m68k-amigaos
-  versions:       6.5.0b, 13.4, 16.2 (ppc-amigaos: 16.2)
+  versions:       13.4, 16.2 (ppc-amigaos: 16.2)
   prefixes:       /opt/amiga-vVERSION-YYYYMMDD
                   (ppc-amigaos: /opt/amiga-ppc-vVERSION-YYYYMMDD)
   NDK:            3.2
@@ -343,7 +343,7 @@ parse_args() {
   case "$TARGET" in
     m68k-amigaos)
       if [[ ${#VERSION_SPECS[@]} -eq 0 ]]; then
-        VERSION_SPECS=("6.5.0b" "13.4" "16.2")
+        VERSION_SPECS=("13.4" "16.2")
       fi
       if [[ -z "$PREFIX_TEMPLATE" ]]; then
         PREFIX_TEMPLATE="amiga-v{version}-{date}"

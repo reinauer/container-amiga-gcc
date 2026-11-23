@@ -92,7 +92,6 @@ jobs:
           - macos
         # name is the prefix and archive base name.
         toolchain:
-          - { target: m68k-amigaos, version: 6.5.0b, name: amiga }
           - { target: m68k-amigaos, version: "13.4", name: amiga }
           - { target: m68k-amigaos, version: "16.2", name: amiga }
           - { target: ppc-amigaos, version: "16.2", name: amiga-ppc }
