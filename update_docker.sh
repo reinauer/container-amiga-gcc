@@ -16,10 +16,14 @@ Options:
       --no-push              Build and tag the images, but do not push them
       --gcc-version VER      Build only the images of GCC version VER, such as
                               16.2; repeat for more
-      --release-tag TAG      Build only the m68k-amigaos release TAG of
+      --release-tag TAG      Build the GCC version of release TAG of
                               AmigaPorts/m68k-amigaos-gcc (such as
-                              v16.2-rc21), tagged without its "v" (16.2-rc21);
-                              latest is left alone
+                              v16.2-rc21) from that release, as the toolchain
+                              archives do: m68k-amigaos at TAG, also tagged
+                              without its "v" (16.2-rc21), and ppc-amigaos
+                              with gcc and binutils at m68k-amigaos-gcc-TAG.
+                              The other versions are built from their branches
+      --date YYYYMMDD        Use YYYYMMDD in the dated tags instead of today
   -r, --repository REPO      Publish to REPO instead of
                               $DOCKERHUB_REPOSITORY
   -h, --help                 Show this help message
@@ -36,6 +40,7 @@ NO_SKIP=false
 NO_PUSH=false
 RELEASE_TAG=""
 RELEASE_TAG_GIVEN=false
+BUILD_DATE=""
 SELECTED_VERSIONS=()
 
 # Exit with the usage unless option $1 has a value after it; $2 is the
@@ -83,6 +88,14 @@ while [ "$#" -gt 0 ]; do
             RELEASE_TAG="${1#*=}"
             RELEASE_TAG_GIVEN=true
             ;;
+        --date)
+            need_value "$1" "$#"
+            BUILD_DATE="$2"
+            shift
+            ;;
+        --date=*)
+            BUILD_DATE="${1#*=}"
+            ;;
         -h|--help)
             usage
             exit 0
@@ -110,9 +123,18 @@ if [ "$RELEASE_TAG_GIVEN" = true ]; then
         exit 1
     fi
     if [ "${#SELECTED_VERSIONS[@]}" -gt 0 ]; then
-        echo "--release-tag builds the GCC version of its tag; drop --gcc-version" >&2
+        echo "--release-tag builds every version; drop --gcc-version" >&2
         exit 1
     fi
+fi
+
+# The dated tags, such as gcc-v16.2-20261127. The toolchain archives pass
+# the date of their release, so that both carry the same one.
+if [ -z "$BUILD_DATE" ]; then
+    BUILD_DATE=$(date +%Y%m%d)
+elif ! [[ "$BUILD_DATE" =~ ^[0-9]{8}$ ]]; then
+    echo "Not a date: '$BUILD_DATE' (expected YYYYMMDD)" >&2
+    exit 1
 fi
 
 # Define GCC versions and branches. Keep this compatible with macOS
@@ -168,6 +190,23 @@ if [ "${#SELECTED_VERSIONS[@]}" -gt 0 ]; then
     PPC_GCC_VERSION_SPECS=("${PPC_SPECS[@]}")
 fi
 
+# A release, such as v16.2-rc21, pins its GCC version: 16.2.
+RELEASE_VERSION=""
+if [ "$RELEASE_TAG_GIVEN" = true ]; then
+    RELEASE_VERSION="${RELEASE_TAG#v}"
+    RELEASE_VERSION="${RELEASE_VERSION%%-*}"
+    FOUND=false
+    for GCC_VERSION_SPEC in "${GCC_VERSION_SPECS[@]}"; do
+        if [ "${GCC_VERSION_SPEC%%:*}" = "$RELEASE_VERSION" ]; then
+            FOUND=true
+        fi
+    done
+    if [ "$FOUND" != true ]; then
+        echo "No m68k-amigaos GCC ${RELEASE_VERSION} for release ${RELEASE_TAG}" >&2
+        exit 1
+    fi
+fi
+
 # Prompt the user, then execute the command without reparsing its arguments.
 ask_and_run() {
     local response
@@ -211,20 +250,22 @@ push_image() {
     ask_and_run "$DOCKER_CLI" push "$1"
 }
 
-# Get the current date in YYYYMMDD format.
-BUILD_DATE=$(date +%Y%m%d)
 # Write a value such as "-4" to .extra to append it to dated tags.
 EXTRA=""
 if [ -f .extra ]; then
     IFS= read -r EXTRA < .extra || true
 fi
 
-# Build, tag and push one image. TARGET is m68k-amigaos or ppc-amigaos;
-# SUFFIX is appended to the version in the tags. With RELEASE_TAG, such as
-# v16.2-rc21, the image is built from that release and tagged with it
-# without its "v" (16.2-rc21) instead of gcc-vVERSION and the date.
+# Build, tag and push one image, tagged gcc-vVERSION and
+# gcc-vVERSION-DATE. TARGET is m68k-amigaos or ppc-amigaos; SUFFIX is
+# appended to the version in the tags; BRANCH is the AmigaPorts/gcc ref.
+# With RELEASE_TAG, such as v16.2-rc21, an m68k-amigaos image is built from
+# that release and also tagged with it without its "v" (16.2-rc21).
+# BINUTILS_REF is the ppc-amigaos AmigaPorts/binutils-gdb ref, if not the
+# default one.
 build_image() {
     local target="$1" version="$2" branch="$3" suffix="$4" release_tag="${5:-}"
+    local binutils_ref="${6:-}"
     local local_tag tag
     local tags=()
     local build_args=(
@@ -233,17 +274,20 @@ build_image() {
         --build-arg "BUILD_GCC_VERSION=${version}"
     )
 
+    local_tag="${LOCAL_IMAGE_NAME}:gcc-v${version}${suffix}-${BUILD_DATE}${EXTRA}"
+    tags+=("${IMAGE_REPOSITORY}:gcc-v${version}${suffix}")
+    tags+=("${IMAGE_REPOSITORY}:gcc-v${version}${suffix}-${BUILD_DATE}${EXTRA}")
+
     echo "========================================"
     if [ -n "$release_tag" ]; then
         echo "Building ${target} GCC ${version} (release: ${release_tag})"
-        local_tag="${LOCAL_IMAGE_NAME}:${release_tag#v}"
         tags+=("${IMAGE_REPOSITORY}:${release_tag#v}")
         build_args+=(--build-arg "BUILD_RELEASE_TAG=${release_tag}")
     else
         echo "Building ${target} GCC ${version} (branch: ${branch})"
-        local_tag="${LOCAL_IMAGE_NAME}:gcc-v${version}${suffix}-${BUILD_DATE}${EXTRA}"
-        tags+=("${IMAGE_REPOSITORY}:gcc-v${version}${suffix}")
-        tags+=("${IMAGE_REPOSITORY}:gcc-v${version}${suffix}-${BUILD_DATE}${EXTRA}")
+    fi
+    if [ -n "$binutils_ref" ]; then
+        build_args+=(--build-arg "BUILD_BINUTILS_REF=${binutils_ref}")
     fi
     echo "========================================"
     echo
@@ -264,32 +308,26 @@ build_image() {
     echo
 }
 
-# A release builds only its own m68k-amigaos image, from the version in its
-# tag; the branch only fills the gcc.branch label.
-if [ "$RELEASE_TAG_GIVEN" = true ]; then
-    RELEASE_VERSION="${RELEASE_TAG#v}"
-    RELEASE_VERSION="${RELEASE_VERSION%%-*}"
-    RELEASE_BRANCH=""
-    for GCC_VERSION_SPEC in "${GCC_VERSION_SPECS[@]}"; do
-        if [ "${GCC_VERSION_SPEC%%:*}" = "$RELEASE_VERSION" ]; then
-            RELEASE_BRANCH="${GCC_VERSION_SPEC#*:}"
-        fi
-    done
-    if [ -z "$RELEASE_BRANCH" ]; then
-        echo "No m68k-amigaos GCC ${RELEASE_VERSION} for release ${RELEASE_TAG}" >&2
-        exit 1
-    fi
-    build_image m68k-amigaos "$RELEASE_VERSION" "$RELEASE_BRANCH" "" "$RELEASE_TAG"
-    echo "Script finished."
-    exit 0
-fi
-
 # --- Build and push each GCC version ---
+# The version of a release is built from it, the way the toolchain archives
+# build it: m68k-amigaos at the release (the branch only fills the gcc.branch
+# label), ppc-amigaos with gcc and binutils at its m68k-amigaos-gcc-TAG tags.
 for GCC_VERSION_SPEC in "${GCC_VERSION_SPECS[@]}"; do
-    build_image m68k-amigaos "${GCC_VERSION_SPEC%%:*}" "${GCC_VERSION_SPEC#*:}" ""
+    VERSION="${GCC_VERSION_SPEC%%:*}"
+    if [ "$VERSION" = "$RELEASE_VERSION" ]; then
+        build_image m68k-amigaos "$VERSION" "${GCC_VERSION_SPEC#*:}" "" "$RELEASE_TAG"
+    else
+        build_image m68k-amigaos "$VERSION" "${GCC_VERSION_SPEC#*:}" ""
+    fi
 done
 for GCC_VERSION_SPEC in "${PPC_GCC_VERSION_SPECS[@]}"; do
-    build_image ppc-amigaos "${GCC_VERSION_SPEC%%:*}" "${GCC_VERSION_SPEC#*:}" "-ppc"
+    VERSION="${GCC_VERSION_SPEC%%:*}"
+    if [ "$VERSION" = "$RELEASE_VERSION" ]; then
+        REF="m68k-amigaos-gcc-${RELEASE_TAG}"
+        build_image ppc-amigaos "$VERSION" "$REF" "-ppc" "" "$REF"
+    else
+        build_image ppc-amigaos "$VERSION" "${GCC_VERSION_SPEC#*:}" "-ppc"
+    fi
 done
 
 if [ "$TAG_LATEST" != true ]; then

@@ -92,10 +92,11 @@ from with the build date, such as `v2026-10-28`, and another run on the same
 day replaces that release. Given a release tag of
 [AmigaPorts/m68k-amigaos-gcc](https://github.com/AmigaPorts/m68k-amigaos-gcc/tags),
 GCC 16.2 is built from that release instead of the branches, for
-m68k-amigaos and ppc-amigaos alike, and the release notes say so. The run
-also starts the image build of that release (see
-[Publishing images](#publishing-images)). A new upstream release needs no
-change here, just another run:
+m68k-amigaos and ppc-amigaos alike, and the release notes say so. A release
+also rebuilds the container images the same way and with the same build
+date, so that the images and the archives of a release hold the same
+compilers (see [Publishing images](#publishing-images)). A new upstream
+release needs no change here, just another run:
 
 ```sh
 gh workflow run toolchain-archives.yml -f release_tag=v16.2-rc22
@@ -186,13 +187,16 @@ script too. Use `--no-push` to only build and tag them locally:
 
 `--gcc-version VER` builds only the images of that GCC version, both targets;
 repeat it for more. `latest` moves only when its version is among them.
-`--release-tag TAG` builds just the m68k-amigaos image of a release, as
-`build.sh --release-tag` does, tagged with the release without its "v"; it
-leaves `latest` alone:
+`--release-tag TAG` builds the GCC version of a release from that release,
+as the toolchain archives do: the m68k-amigaos image as
+`build.sh --release-tag` does, also tagged with the release without its "v",
+and the ppc-amigaos image with gcc and binutils at the release's
+`m68k-amigaos-gcc-TAG` tags. The other versions are still built from their
+branches. `--date YYYYMMDD` sets the date of the dated tags:
 
 ```sh
 ./update_docker.sh --no-push --gcc-version 16.2
-./update_docker.sh --no-push --release-tag v16.2-rc21  # amiga-gcc:16.2-rc21
+./update_docker.sh --no-push --release-tag v16.2-rc21  # also amiga-gcc:16.2-rc21
 ```
 
 Set `DOCKER_CLI=podman` to build with Podman instead of Docker.
@@ -212,7 +216,9 @@ docker build -f Containerfile --build-arg BUILD_GCC_VERSION=16.2 \
 ```
 
 For a release, add `--build-arg BUILD_RELEASE_TAG=v16.2-rc21`, with the
-matching `BUILD_GCC_VERSION`.
+matching `BUILD_GCC_VERSION`. A ppc-amigaos image of a release instead takes
+`BUILD_GCC_BRANCH=m68k-amigaos-gcc-v16.2-rc21` and
+`BUILD_BINUTILS_REF=m68k-amigaos-gcc-v16.2-rc21`.
 
 For `ppc-amigaos`, add `--build-arg BUILD_TARGET=ppc-amigaos` and pass the
 AmigaPorts/gcc ref as `BUILD_GCC_BRANCH`:
@@ -227,12 +233,15 @@ podman build --build-arg BUILD_TARGET=ppc-amigaos \
 
 Every push to `main` that changes what goes into the images builds them and
 publishes them to GHCR; a newer push cancels the build still running for an
-older one. The image of a release of AmigaPorts/m68k-amigaos-gcc, such as
-`16.2-rc21`, is built by running the workflow with that release tag, which a
-release of the toolchain archives from that tag does too:
+older one. A release of the toolchain archives rebuilds them too, with its
+build date and, if it has one, its release tag of
+AmigaPorts/m68k-amigaos-gcc. Then GCC 16.2 is built from that release and
+also tagged with it, such as `16.2-rc21`, while the other versions come from
+their branches. The workflow can also be run by hand:
 
 ```sh
-gh workflow run publish.yml -f release_tag=v16.2-rc21
+gh workflow run publish.yml                              # from the branches
+gh workflow run publish.yml -f release_tag=v16.2-rc21   # 16.2 from rc21
 ```
 
 Docker Hub is updated from GHCR, without rebuilding:
@@ -251,7 +260,7 @@ Tags that are already up to date are skipped. Use `--dry-run` to only list
 them and `--yes` to copy without asking.
 
 Without `--no-push`, `update_docker.sh` builds the images locally (all
-versions, or those that `--gcc-version` or `--release-tag` select) and pushes
+versions, or those that `--gcc-version` selects) and pushes
 them to Docker Hub directly, asking before each step.
 
 Both scripts read the registry accounts from `registry.conf`. To publish from

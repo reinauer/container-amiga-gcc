@@ -4,7 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Build only the m68k-amigaos image of this AmigaPorts/m68k-amigaos-gcc release tag (such as v16.2-rc21), tagged 16.2-rc21, instead of the branch images
+        description: Build GCC 16.2 from this AmigaPorts/m68k-amigaos-gcc release tag (such as v16.2-rc21) instead of the branches, also tagged 16.2-rc21, as the toolchain archives do
+        required: false
+        type: string
+      build_date:
+        description: Build date used in the dated tags (YYYYMMDD; defaults to today)
         required: false
         type: string
   push:
@@ -18,11 +22,11 @@ on:
       - install_release.sh
       - zprofile
 
-# A newer push supersedes the branch images still being built for an older
-# one.  A release image has a group of its own, so that pushes don't cancel
-# it.
+# A newer push supersedes the images still being built for an older one.
+# A run started by hand, which a release of the toolchain archives does, has
+# a group of its own, so that pushes don't cancel it.
 concurrency:
-  group: publish-${{ inputs.release_tag || 'branches' }}
+  group: publish-${{ inputs.release_tag || github.event_name }}
   cancel-in-progress: true
 
 env:
@@ -45,13 +49,20 @@ jobs:
       - name: Resolve image repository
         id: image
         env:
+          BUILD_DATE: ${{ inputs.build_date }}
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           echo "repository=${REGISTRY}/${GITHUB_REPOSITORY,,}" \
             >> "$GITHUB_OUTPUT"
 
-          # A release image is tagged with the release without its "v", the
-          # branch images are attested through latest.
+          if [[ -n "$BUILD_DATE" && ! "$BUILD_DATE" =~ ^[0-9]{8}$ ]]; then
+            echo "Invalid build date: $BUILD_DATE (expected YYYYMMDD)" >&2
+            exit 1
+          fi
+
+          # Every run builds GCC 16.2, so the images are attested through
+          # latest; a release's own tag, such as 16.2-rc21, is the same image.
+          echo "tag=latest" >> "$GITHUB_OUTPUT"
           if [[ -n "$RELEASE_TAG" ]]; then
             if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+(\.[0-9]+)*(-rc[0-9]+)?$ ]]; then
               echo "Invalid release tag: $RELEASE_TAG (expected such as v16.2-rc21)" >&2
@@ -63,9 +74,6 @@ jobs:
               echo "No release tag $RELEASE_TAG in AmigaPorts/m68k-amigaos-gcc" >&2
               exit 1
             }
-            echo "tag=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=latest" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Log in to GitHub Container Registry
@@ -77,12 +85,16 @@ jobs:
 
       - name: Build and publish compiler images
         env:
+          BUILD_DATE: ${{ inputs.build_date }}
           IMAGE_REPOSITORY: ${{ steps.image.outputs.repository }}
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           args=(--no-skip --repository "$IMAGE_REPOSITORY")
           if [[ -n "$RELEASE_TAG" ]]; then
             args+=(--release-tag "$RELEASE_TAG")
+          fi
+          if [[ -n "$BUILD_DATE" ]]; then
+            args+=(--date "$BUILD_DATE")
           fi
           ./update_docker.sh "${args[@]}"
 

@@ -11,6 +11,10 @@ ARG BUILD_GCC_VERSION=16.2
 # ignored.  m68k-amigaos only.
 ARG BUILD_RELEASE_TAG=""
 
+# ppc-amigaos: the AmigaPorts/binutils-gdb ref, such as
+# m68k-amigaos-gcc-v16.2-rc21 for a release, instead of build.sh's default.
+ARG BUILD_BINUTILS_REF=""
+
 # NDK version - defaults to 3.2 for all GCC versions
 ARG NDK_VERSION
 
@@ -35,6 +39,7 @@ RUN if [ "${BUILD_TARGET}" = ppc-amigaos ]; then \
       --target "${BUILD_TARGET}" \
       --version "${BUILD_GCC_VERSION}:${BUILD_GCC_BRANCH}" \
       ${BUILD_RELEASE_TAG:+--release-tag "${BUILD_RELEASE_TAG}"} \
+      ${BUILD_BINUTILS_REF:+--binutils-ref "${BUILD_BINUTILS_REF}"} \
       --ndk "${NDK_VERSION:-3.2}" \
       --prefix-template "${prefix_template}" \
       --workdir /root/.amiga-gcc-build \
@@ -59,4 +64,5 @@ LABEL gcc.target="${BUILD_TARGET}"
 LABEL gcc.version="${BUILD_GCC_VERSION}"
 LABEL gcc.branch="${BUILD_GCC_BRANCH}"
 LABEL gcc.release_tag="${BUILD_RELEASE_TAG}"
+LABEL gcc.binutils_ref="${BUILD_BINUTILS_REF}"
 LABEL gcc.amiga_lto="1"
