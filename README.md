@@ -14,11 +14,11 @@ Supported GCC versions:
 
 | Version  | amiga-gcc branch |
 |----------|------------------|
-| `13.4`   | `amiga13.4`      |
 | `16.2`   | `amiga16.2`      |
 
-GCC 6.5.0b (`amiga6`) is no longer built or published. The existing
-`gcc-v6.5.0b` images stay available.
+GCC 6.5.0b (`amiga6`) and GCC 13.4 (`amiga13.4`) are no longer built or
+published. The existing `gcc-v6.5.0b` and `gcc-v13.4` images stay available;
+`gcc-v13.4` is the last 13.4 build, `gcc-v13.4-20261128`.
 
 `ppc-amigaos` GCC 16.2 is built from the same
 [AmigaPorts gcc](https://github.com/AmigaPorts/gcc) branch, `amiga16.2`, and
@@ -61,7 +61,7 @@ location.
 
 | Tag                      | Contents                       |
 |--------------------------|--------------------------------|
-| `gcc-v13.4`              | GCC 13.4                       |
+| `gcc-v13.4`              | GCC 13.4, no longer updated    |
 | `gcc-v16.2`, `latest`    | GCC 16.2                       |
 | `gcc-v16.2-ppc`          | GCC 16.2 for `ppc-amigaos`     |
 | `gcc-vVERSION-YYYYMMDD`  | A specific dated build         |
@@ -71,7 +71,7 @@ The toolchain is installed in `/opt/amiga` (`/opt/amiga-ppc` for
 `ppc-amigaos`) and is on `PATH`:
 
 ```sh
-podman run --rm -v "$PWD:/src" -w /src stefanreinauer/amiga-gcc:gcc-v13.4 \
+podman run --rm -v "$PWD:/src" -w /src stefanreinauer/amiga-gcc:gcc-v16.2 \
   m68k-amigaos-gcc hello.c -o hello -noixemul
 podman run --rm -v "$PWD:/src" -w /src stefanreinauer/amiga-gcc:gcc-v16.2-ppc \
   ppc-amigaos-gcc hello.c -o hello
@@ -135,10 +135,9 @@ export PATH=/opt/amiga-16.2/bin:$PATH
 
 Several versions and dates can be installed side by side.
 
-`zprofile` is an example for zsh: add it to `~/.zprofile` to get `amiga13`
-and `amiga16`, which switch the shell between the installed
-m68k-amigaos toolchains, with GCC 16.2 as the default and `ppc-amigaos` always
-on `PATH`.
+`zprofile` is an example for zsh: add it to `~/.zprofile` to get `amiga16`,
+which puts the installed m68k-amigaos GCC 16.2 toolchain first on `PATH`, as
+it is by default, with `ppc-amigaos` always on `PATH`.
 
 On macOS, browser downloads may carry a quarantine flag that triggers an
 "Apple could not verify" warning for every executable. If you trust the
@@ -154,7 +153,7 @@ flag on those directories; it does not disable Gatekeeper.
 ### Building from source
 
 ```sh
-./build.sh                       # 13.4 and 16.2 into /opt/amiga-vVERSION-YYYYMMDD
+./build.sh                       # 16.2 into /opt/amiga-vVERSION-YYYYMMDD
 ./build.sh --version 16.2 --prefix /opt/amiga-16.2
 ./build.sh --target ppc-amigaos  # 16.2 into /opt/amiga-ppc-v16.2-YYYYMMDD
 ./build.sh --version 16.2 --release-tag v16.2-rc21  # a release, not the branch

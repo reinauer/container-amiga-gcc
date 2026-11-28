@@ -124,7 +124,7 @@ steps as Containerfile.
 
 Defaults:
   target:         m68k-amigaos
-  versions:       13.4, 16.2 (ppc-amigaos: 16.2)
+  versions:       16.2 (ppc-amigaos: 16.2)
   prefixes:       /opt/amiga-vVERSION-YYYYMMDD
                   (ppc-amigaos: /opt/amiga-ppc-vVERSION-YYYYMMDD)
   NDK:            3.2
@@ -182,8 +182,7 @@ ${package_option}
 Examples:
   ./build.sh
   ./build.sh --date 20260518
-  ./build.sh --ndk 3.9 --version 13.4
-  ./build.sh --version 13.4 --prefix /opt/amiga-13.4-custom
+  ./build.sh --ndk 3.9 --version 16.2
   ./build.sh --cc gcc-12 --cxx g++-12
   ./build.sh --version 16.2 --prefix /opt/amiga-16.2
   ./build.sh --version 16.2 --release-tag v16.2-rc21
@@ -360,7 +359,7 @@ parse_args() {
   case "$TARGET" in
     m68k-amigaos)
       if [[ ${#VERSION_SPECS[@]} -eq 0 ]]; then
-        VERSION_SPECS=("13.4" "16.2")
+        VERSION_SPECS=("16.2")
       fi
       if [[ -z "$PREFIX_TEMPLATE" ]]; then
         PREFIX_TEMPLATE="amiga-v{version}-{date}"

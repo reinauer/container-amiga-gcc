@@ -140,7 +140,6 @@ fi
 # Define GCC versions and branches. Keep this compatible with macOS
 # /bin/bash 3.2, which does not support associative arrays.
 GCC_VERSION_SPECS=(
-    "13.4:amiga13.4"
     "16.2:amiga16.2"
 )
 

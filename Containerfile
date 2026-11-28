@@ -1,8 +1,6 @@
 FROM ubuntu:26.04
 
 # Build arguments for configurable GCC branch
-#ARG BUILD_GCC_BRANCH=amiga13.4
-#ARG BUILD_GCC_VERSION=13.4
 ARG BUILD_GCC_BRANCH=amiga16.2
 ARG BUILD_GCC_VERSION=16.2
 
