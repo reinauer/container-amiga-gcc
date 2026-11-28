@@ -36,8 +36,8 @@ REUSE_SOURCE=0
 RELEASE_TAG=""
 RELEASE_TAG_GIVEN=0
 # m68k-amigaos gcc thread model from --threads; empty leaves the Makefile's
-# default (no).  THREADS is what the GCC version being built gets, which make
-# is given: the Makefile has thread models only for gcc 16.2 and later.
+# default (amigaos).  THREADS is what the GCC version being built gets, which
+# make is given: gcc has thread models only from 16.2 on.
 THREADS_OPTION=""
 THREADS=""
 DEFAULT_SYMLINK_VERSION=""
@@ -161,7 +161,7 @@ Options:
                              module at its m68k-amigaos-gcc-TAG tag instead of
                              its branch; needs exactly one --version
   --threads MODEL            m68k-amigaos: gcc thread model, no, amigaos or
-                             posix (default: the Makefile's, no), for GCC 16.2
+                             posix (default: the Makefile's, amigaos), for GCC 16.2
                              and later; older versions build with no.
                              amigaos and posix give C++ std::thread,
                              std::mutex and per-thread thread_local: amigaos
@@ -417,12 +417,14 @@ prefix_for_version() {
 
 # The thread model make gets for a GCC version: --threads from 16.2 on.
 # Both thread models need gcc's <benaphore.h>, which older versions don't
-# have, so the Makefile builds them only with THREADS=no.
+# have, so they build with THREADS=no.  That is passed even without
+# --threads: the Makefile defaults to amigaos since it dropped gcc before
+# 16.2, and gcc 13.4's configure doesn't know that thread package.
 threads_for_version() {
   local version="$1"
 
   case "$THREADS_OPTION" in
-    amigaos | posix)
+    "" | amigaos | posix)
       if (( ${version%%.*} >= 16 )); then
         printf '%s\n' "$THREADS_OPTION"
       else
