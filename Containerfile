@@ -51,6 +51,13 @@ RUN if [ "${BUILD_TARGET}" = ppc-amigaos ]; then \
       libgmp-dev libmpfr-dev libmpc-dev rsync texinfo && \
     apt-get -y autoremove
 
+# Host tools that projects built in this image use alongside the cross
+# compiler, such as CMake for native helpers (the L-Packer executable packer
+# in A4091 and xSysInfo). The toolchain build itself does not need them.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends cmake && \
+    rm -rf /var/lib/apt/lists/*
+
 # Preserve the historical absolute location as well as PATH-based access.
 RUN if [ -x /opt/amiga/bin/gencrc ]; then \
       ln -s /opt/amiga/bin/gencrc /bin/gencrc; \
